@@ -19,6 +19,18 @@ class Settings(BaseSettings):
         "*"
     ]
 
+    # MRI Validation & Preprocessing Settings
+    MAX_UPLOAD_SIZE_MB: int = 25
+    IMAGE_INPUT_SIZE: int = 224
+    ALLOWED_EXTENSIONS: List[str] = [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".dcm",
+        ".nii",
+        ".nii.gz",
+    ]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

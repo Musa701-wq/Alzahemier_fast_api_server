@@ -4,7 +4,7 @@ FastAPI backend server for Alzheimer's Disease staging from brain MRI scans usin
 
 ---
 
-## 🛠️ Project Structure (Section 1 - Initial Server Setup)
+## 🛠️ Project Structure (Section 2 - MRI Validation & Preprocessing)
 
 ```text
 Alzheimer’s/
@@ -19,11 +19,16 @@ Alzheimer’s/
 │   │   └── logging.py              # Logging setup
 │   ├── schemas/
 │   │   └── health.py               # Pydantic schemas
+│   ├── services/
+│   │   └── preprocessor.py         # Brain MRI preprocessing pipeline
+│   ├── utils/
+│   │   └── validators.py           # File extension & payload size validators
 │   └── main.py                     # FastAPI application factory
 ├── tests/
-│   └── test_health.py              # Health endpoint unit tests
+│   ├── test_health.py              # Health endpoint unit tests
+│   └── test_preprocessor.py        # MRI validation & preprocessing tests
 ├── .gitignore                      # Git ignore rules
-├── requirements.txt                # Base dependencies
+├── requirements.txt                # Base & scientific dependencies
 └── README.md
 ```
 

@@ -1,72 +1,82 @@
-# Alzheimer's Disease Staging Backend
+# Yaadasht
 
-FastAPI backend server for Alzheimer's Disease staging from brain MRI scans using explainable deep learning techniques.
+Yaadasht is a home cognitive screening and care-continuity platform. It guides a user or caregiver through 7 recorded cognitive tests in about 15 minutes, computes rule-based domain scores, tracks longitudinal score trends, and provides plain-language guidance on whether to relax, keep watching, or consult a specialist.
 
----
+When a specialist consultation is advised, the platform helps the family locate verified neurologists, geriatricians, and memory clinics in their city, call the clinic directly, and share a one-page clinical summary report (PDF or expiring read-only link). After a doctor visit, families can upload the doctor's prescription report, confirm prescribed medicines, log daily adherence (Taken or Skipped), and generate monthly follow-up reports.
 
-## 🛠️ Project Structure (Section 2 - MRI Validation & Preprocessing)
+## Scope and Safety Boundaries
+
+- **Screening Aid Only**: Yaadasht does not diagnose Alzheimer's disease or any medical condition. Every session result and generated report includes a mandatory screening-aid disclaimer.
+- **Medication Safety**: The application never prescribes, recommends, or modifies medicine dosages. Reminders are only created after the user explicitly confirms each medicine line from their own doctor's report.
+- **No Doctor Accounts**: Doctors do not need to sign up or log in. They receive a phone call from the family and a one-page PDF or read-only web report.
+
+## Repository Structure
 
 ```text
-Alzheimer’s/
-├── app/
-│   ├── api/
-│   │   └── v1/
-│   │       ├── endpoints/
-│   │       │   └── health.py       # Health check route
-│   │       └── api.py              # Main V1 router
-│   ├── core/
-│   │   ├── config.py               # Application settings
-│   │   └── logging.py              # Logging setup
-│   ├── schemas/
-│   │   └── health.py               # Pydantic schemas
-│   ├── services/
-│   │   └── preprocessor.py         # Brain MRI preprocessing pipeline
-│   ├── utils/
-│   │   └── validators.py           # File extension & payload size validators
-│   └── main.py                     # FastAPI application factory
-├── tests/
-│   ├── test_health.py              # Health endpoint unit tests
-│   └── test_preprocessor.py        # MRI validation & preprocessing tests
-├── .gitignore                      # Git ignore rules
-├── requirements.txt                # Base & scientific dependencies
+yaadasht/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                # FastAPI application entrypoint
+│   │   ├── core/
+│   │   │   ├── config.py          # Environment settings
+│   │   │   └── auth.py            # JWT authentication & role dependencies
+│   │   ├── db/
+│   │   │   └── repository.py      # Supabase / local data repository & RLS enforcement
+│   │   ├── models/
+│   │   │   └── schemas.py         # Pydantic request & response schemas
+│   │   ├── routers/
+│   │   │   ├── auth.py            # Signup, login, current user profile
+│   │   │   ├── profiles.py        # Persons & consent management
+│   │   │   ├── sessions.py        # Session start, completion, clock-check & history
+│   │   │   ├── results.py         # Per-test (1-7) result recording & scoring
+│   │   │   ├── reports.py         # PDF generation, share tokens & public report view
+│   │   │   ├── doctors.py         # Doctor directory search, filters & favorites
+│   │   │   ├── post_visit.py      # Doctor documents, confirmed medicines & monthly summaries
+│   │   │   ├── reminders.py       # Medicine & retest reminders
+│   │   │   ├── safety.py          # Emergency phrase detection & verified resources
+│   │   │   └── admin.py           # Admin doctor management, CSV import & scoring config
+│   │   └── services/
+│   │       ├── transcribe.py      # Speech-to-text interface (Whisper)
+│   │       ├── scoring.py         # Rule-based scoring for all 7 cognitive tests
+│   │       ├── clock_check.py     # Vision checklist interface for test 5
+│   │       ├── outcome.py         # Three-outcome evaluator & override rules
+│   │       ├── report.py          # One-page report builder & anti-hallucination checker
+│   │       ├── pdf.py             # Single-page PDF document generator
+│   │       ├── reminders.py       # Daily medicine & follow-up retest scheduler
+│   │       └── safety.py          # Emergency phrase scanner
+│   └── tests/                     # Unit & integration test suite
+├── supabase/
+│   ├── migrations/
+│   │   └── 001_initial_schema.sql # Database tables & Row Level Security policies
+│   └── seed/
+│       └── doctors_template.csv   # Empty CSV template for admin doctor imports
+├── requirements.txt
 └── README.md
 ```
 
----
+## Setup and Running
 
-## 🚀 Getting Started
-
-### 1. Create and Activate Virtual Environment
+### 1. Environment Setup
 
 ```bash
 python -m venv .venv
-# On Windows (PowerShell):
+# Windows PowerShell
 .venv\Scripts\Activate.ps1
-# On Linux / macOS:
+# Linux / macOS
 source .venv/bin/activate
-```
 
-### 2. Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. Run the Development Server
+### 2. Run the FastAPI Server
 
 ```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 4. Interactive Documentation
+Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 
-Once the server is running, visit:
-- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
-
----
-
-## 🧪 Running Tests
+### 3. Run Tests
 
 ```bash
 pytest -v

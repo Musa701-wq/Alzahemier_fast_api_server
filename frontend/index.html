@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yaadasht — Home Cognitive Screening &amp; Care Continuity</title>
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/base.css" />
+  <link rel="stylesheet" href="/assets/css/layout.css" />
+  <link rel="stylesheet" href="/assets/css/components.css" />
+</head>
+<body>
+  <div class="page-wrapper">
+    <!-- =========================================================
+         EMERGENCY SAFETY BANNER (HIDDEN UNLESS TRIGGERED)
+         ========================================================= -->
+    <div class="safety-emergency-banner hidden" id="safetyBanner" role="alert">
+      <div class="safety-emergency-banner__inner">
+        <div>
+          <strong>Urgent Safety Alert — Immediate Help Available</strong>
+          <p id="safetyBannerMessage">If someone is in immediate danger or unresponsive, please call emergency services immediately.</p>
+        </div>
+        <div class="safety-emergency-banner__numbers" id="safetyBannerNumbers"></div>
+        <button type="button" class="btn-close-safety" id="btnDismissSafety">&times;</button>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         3-ZONE EMERALD APP BAR
+         ========================================================= -->
+    <header class="appbar">
+      <div class="appbar__glow-line"></div>
+      <div class="appbar__inner">
+        <!-- Zone 1: Brand Identity -->
+        <a href="#home" class="appbar__brand" data-nav-target="home">
+          <span class="appbar__logo-wrap">
+            <img src="/assets/logo.png" alt="Yaadasht Logo" class="appbar__logo-img" />
+          </span>
+          <div class="appbar__brand-text">
+            <span class="appbar__name">Yaad<span>asht</span></span>
+            <span class="appbar__sub">Home Cognitive Screening &amp; Care</span>
+          </div>
+        </a>
+
+        <!-- Zone 2: Centered Navigation Dock -->
+        <nav class="appbar__nav" aria-label="Main Navigation">
+          <button type="button" class="nav-link active" data-section="home">
+            <span>Home</span>
+          </button>
+          <button type="button" class="nav-link" data-section="session">
+            <span>7 Tests</span>
+          </button>
+          <button type="button" class="nav-link" data-section="result">
+            <span>Result &amp; Report</span>
+          </button>
+          <button type="button" class="nav-link" data-section="doctors">
+            <span>Doctors</span>
+          </button>
+          <button type="button" class="nav-link" data-section="postvisit">
+            <span>Post-Visit &amp; Medicines</span>
+          </button>
+          <button type="button" class="nav-link" data-section="settings">
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        <!-- Zone 3: Voice Assistant Status & Active Profile Badge -->
+        <div class="appbar__right">
+          <button type="button" class="voice-mode-pill" id="btnToggleSpeechOutput" title="Toggle Voice Examiner Audio Prompts">
+            <span class="voice-dot"></span>
+            <span id="voiceGuideStatusText">🔊 Voice Examiner: Active</span>
+          </button>
+          <div class="appbar__status">
+            <span class="appbar__status-dot"></span>
+            <span id="activePersonBadge">Guest Mode</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- =========================================================
+         MAIN FULL-PAGE CONTAINER
+         ========================================================= -->
+    <main class="main-container">
+
+      <!-- =======================================================
+           SECTION 1: HOME, ONBOARDING & TODAY'S CARE PLAN
+           ======================================================= -->
+      <section class="page-section active" id="section-home" data-page="home">
+        <div class="hero-full">
+          <div class="hero-full__left anim-item anim-d1">
+            <div class="eyebrow-pill">
+              <span class="pulse-dot"></span>
+              <span>Screening Aid Only · Not a Medical Diagnosis</span>
+            </div>
+
+            <h1 class="hero-display">
+              15-Minute Home <span class="text-gradient">Memory &amp; Cognitive Check</span>
+            </h1>
+
+            <p class="hero-lead">
+              Take 7 guided cognitive tests at home with full verbal voice interaction. Speak your answers naturally, receive a plain-language outcome, track longitudinal score trends, find a specialist doctor in your city, and manage post-visit medicine reminders.
+            </p>
+
+            <div class="hero-cta-row">
+              <button type="button" class="btn-glow-green" id="btnQuickStartSession">
+                <span>Start 7 Guided Tests (15 Min)</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </button>
+
+              <button type="button" class="btn-outline-green" data-nav-target="doctors">
+                <span>Find a Specialist Doctor</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Right Column: Patient Profile & Consent Setup Card -->
+          <div class="hero-full__right anim-item anim-d2">
+            <div class="scanner-card onboarding-card">
+              <div class="scanner-card__head">
+                <div>
+                  <span class="card-step-tag">Stage 1 · Onboarding &amp; Consent</span>
+                  <h3>Person Being Tested &amp; Consent</h3>
+                </div>
+                <span class="verified-pill" id="onboardStatusBadge">Required</span>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="form-field">
+                  <label for="inpPersonName">Patient / Person Name</label>
+                  <input type="text" id="inpPersonName" value="Abdul Sattar" placeholder="Full Name" />
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonAge">Age (Years)</label>
+                  <input type="number" id="inpPersonAge" value="68" min="18" max="120" />
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonGender">Gender</label>
+                  <select id="inpPersonGender">
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonCity">City</label>
+                  <select id="inpPersonCity">
+                    <option value="Lahore">Lahore</option>
+                    <option value="Karachi">Karachi</option>
+                    <option value="Islamabad">Islamabad</option>
+                    <option value="Rawalpindi">Rawalpindi</option>
+                    <option value="Faisalabad">Faisalabad</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="consent-checklist">
+                <label class="consent-row">
+                  <input type="checkbox" id="chkConsentAudio" checked />
+                  <span>I consent to recording voice responses, drawing strokes, and touch inputs during the 7 tests.</span>
+                </label>
+                <label class="consent-row">
+                  <input type="checkbox" id="chkConsentData" checked />
+                  <span>I understand Yaadasht is a screening aid only (not a medical diagnosis) and consent to data processing &amp; report sharing.</span>
+                </label>
+              </div>
+
+              <button type="button" class="btn-run-full" id="btnSaveProfileAndStart">
+                <span>Save Profile &amp; Begin Guided Session &rarr;</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Home Summary Strip: Last Result, Next Retest & Today's Medicines -->
+        <div class="full-features-band anim-item anim-d3">
+          <div class="feature-tile">
+            <div class="feature-tile__icon">✓</div>
+            <div>
+              <h3>Last Screening Outcome</h3>
+              <p id="homeLastOutcomeText">No session completed yet. Take the 7 tests to establish a baseline.</p>
+            </div>
+          </div>
+
+          <div class="feature-tile">
+            <div class="feature-tile__icon">📅</div>
+            <div>
+              <h3>Next Recommended Retest</h3>
+              <p id="homeNextRetestText">Every 3 months before a doctor visit, or monthly after a visit.</p>
+            </div>
+          </div>
+
+          <div class="feature-tile">
+            <div class="feature-tile__icon">💊</div>
+            <div>
+              <h3>Today's Confirmed Medicines</h3>
+              <p id="homeMedicineQuickText">No doctor prescription uploaded yet. Confirm medicines in Post-Visit.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =======================================================
+           SECTION 2: THE 7 GUIDED COGNITIVE TESTS (SESSION WITH VERBAL INTERACTION)
+           ======================================================= -->
+      <section class="page-section" id="section-session" data-page="session">
+        <div class="scanner-clean-layout">
+          <!-- Progress Dots (1 of 7) -->
+          <div class="scanner-steps-bar">
+            <div class="test-progress-dots" id="testProgressDots">
+              <button type="button" class="step-pill active" data-step="1"><span class="step-num">1</span><span>Orientation</span></button>
+              <button type="button" class="step-pill" data-step="2"><span class="step-num">2</span><span>Immediate Recall</span></button>
+              <button type="button" class="step-pill" data-step="3"><span class="step-num">3</span><span>Animals (60s)</span></button>
+              <button type="button" class="step-pill" data-step="4"><span class="step-num">4</span><span>Picture Story</span></button>
+              <button type="button" class="step-pill" data-step="5"><span class="step-num">5</span><span>Clock Drawing</span></button>
+              <button type="button" class="step-pill" data-step="6"><span class="step-num">6</span><span>Connect Dots</span></button>
+              <button type="button" class="step-pill" data-step="7"><span class="step-num">7</span><span>Delayed Recall</span></button>
+            </div>
+          </div>
+
+          <!-- Active Test Card with Integrated Voice Examiner & Live Speech Recognition -->
+          <div class="scanner-card session-stage-card">
+            <!-- Voice Examiner Header Bar -->
+            <div class="voice-examiner-bar">
+              <div class="voice-examiner-info">
+                <div class="voice-examiner-avatar">🎙️</div>
+                <div class="voice-examiner-text">
+                  <strong id="voiceExaminerTitle">Voice Examiner Ready</strong>
+                  <span id="voiceExaminerSubtitle">Click "Listen to Question" or "Speak Answer" to interact verbally</span>
+                </div>
+              </div>
+              <div class="voice-examiner-actions">
+                <button type="button" class="btn-examiner-speak" id="btnSpeakPrompt">
+                  🔊 Listen to Question
+                </button>
+                <button type="button" class="btn-mic-main" id="btnGlobalMicToggle">
+                  <span id="globalMicIcon">🎙️</span>
+                  <span id="globalMicLabel">Speak Answer</span>
+                  <div class="voice-wave hidden" id="globalMicWave">
+                    <div class="voice-wave-bar"></div>
+                    <div class="voice-wave-bar"></div>
+                    <div class="voice-wave-bar"></div>
+                    <div class="voice-wave-bar"></div>
+                  </div>
+                </button>
+                <span class="verified-pill" id="sessionBankBadge">Item Bank v1</span>
+              </div>
+            </div>
+
+            <!-- Live Speech Recognition Transcript Bubble -->
+            <div class="live-voice-transcript" id="liveVoiceBubble">
+              <span>🎙️ Live Speech:</span>
+              <strong id="liveVoiceText">Microphone idle. Click "Speak Answer" or a field microphone to speak your response.</strong>
+            </div>
+
+            <div class="scanner-card__head" style="margin-top: 4px;">
+              <div>
+                <span class="card-step-tag" id="currentTestDomainTag">Test 1 of 7 · Orientation Domain</span>
+                <h3 id="currentTestTitle">1. Orientation (Time &amp; Place Assessment)</h3>
+              </div>
+            </div>
+
+            <p class="test-instruction-banner" id="currentTestInstruction">
+              Please answer the 5 questions below about today's day, date, month, season, and your city.
+            </p>
+
+            <!-- TEST 1: ORIENTATION (WITH INDIVIDUAL VOICE MIC BUTTONS) -->
+            <div class="test-pane" id="testPane1">
+              <div class="form-grid-2">
+                <div class="form-field">
+                  <label>1. What day of the week is today?</label>
+                  <div class="input-with-mic">
+                    <input type="text" id="t1Day" placeholder="e.g. Monday" />
+                    <button type="button" class="btn-field-mic" data-voice-field="t1Day" title="Speak day of week">🎙️ Speak</button>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>2. What is today's date of the month?</label>
+                  <div class="input-with-mic">
+                    <input type="text" id="t1Date" placeholder="e.g. 5" />
+                    <button type="button" class="btn-field-mic" data-voice-field="t1Date" title="Speak date number">🎙️ Speak</button>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>3. What month is it?</label>
+                  <div class="input-with-mic">
+                    <input type="text" id="t1Month" placeholder="e.g. November" />
+                    <button type="button" class="btn-field-mic" data-voice-field="t1Month" title="Speak month">🎙️ Speak</button>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>4. What season is it right now?</label>
+                  <div class="input-with-mic">
+                    <input type="text" id="t1Season" placeholder="e.g. Autumn / Winter" />
+                    <button type="button" class="btn-field-mic" data-voice-field="t1Season" title="Speak season">🎙️ Speak</button>
+                  </div>
+                </div>
+                <div class="form-field">
+                  <label>5. Which city are you in right now?</label>
+                  <div class="input-with-mic">
+                    <input type="text" id="t1City" placeholder="e.g. Lahore" />
+                    <button type="button" class="btn-field-mic" data-voice-field="t1City" title="Speak city">🎙️ Speak</button>
+                  </div>
+                </div>
+                <div class="form-field" style="display:flex;align-items:flex-end;">
+                  <button type="button" class="btn-outline-green" id="btnSpeakAllOrientation" style="width:100%;height:46px;">
+                    🎙️ Answer All 5 Questions Verbally
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TEST 2: WORD RECALL (IMMEDIATE) -->
+            <div class="test-pane hidden" id="testPane2">
+              <div class="word-bank-display">
+                <p class="word-bank-hint">Listen to the voice examiner read these 5 words aloud, then speak them back into the microphone:</p>
+                <div class="word-chips-row" id="t2WordChips">
+                  <span class="word-chip">River</span>
+                  <span class="word-chip">Mango</span>
+                  <span class="word-chip">Window</span>
+                  <span class="word-chip">Lantern</span>
+                  <span class="word-chip">Carpet</span>
+                </div>
+                <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                  <button type="button" class="btn-examiner-speak" id="btnExaminerSpeakWords">🔊 Examiner: Read 5 Words Aloud</button>
+                  <button type="button" class="btn-outline-green" id="btnHideT2Words">Hide Word Cards</button>
+                </div>
+              </div>
+              <div class="form-field" style="margin-top: 16px;">
+                <label>Spoken / Repeated Words (Captured via Voice Recognition):</label>
+                <div class="input-with-mic">
+                  <input type="text" id="t2Response" value="river mango window lantern carpet" placeholder="Speak the 5 words into the microphone..." />
+                  <button type="button" class="btn-field-mic" data-voice-field="t2Response">🎙️ Speak Words</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- TEST 3: ANIMAL NAMING (60 SECONDS LIVE MIC STREAM) -->
+            <div class="test-pane hidden" id="testPane3">
+              <div class="timer-bar-box">
+                <div class="timer-circle" id="t3TimerDisplay">60s</div>
+                <div>
+                  <strong>60-Second Animal Naming Challenge</strong>
+                  <p>Name as many different animals as possible aloud. The microphone will capture every animal you speak in real time.</p>
+                </div>
+                <button type="button" class="btn-upload-main" id="btnStartT3Timer">▶ Start 60s Test &amp; Open Microphone 🎙️</button>
+              </div>
+              <div class="form-field" style="margin-top: 16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                  <label>Animals Spoken by the Person:</label>
+                  <button type="button" class="btn-field-mic" data-voice-field="t3Response">🎙️ Add Animals via Voice</button>
+                </div>
+                <textarea id="t3Response" rows="3" placeholder="Speak animals into the microphone (e.g. cat dog cow goat horse lion tiger elephant...)">cat dog cow goat horse lion tiger elephant deer monkey bear rabbit squirrel fox</textarea>
+              </div>
+            </div>
+
+            <!-- TEST 4: PICTURE STORY (60 SECONDS LIVE SPOKEN DESCRIPTION) -->
+            <div class="test-pane hidden" id="testPane4">
+              <div class="picture-story-grid">
+                <!-- Illustrated Courtyard Tea Scene SVG -->
+                <div class="picture-scene-frame">
+                  <svg viewBox="0 0 420 240" width="100%" height="220" aria-label="Courtyard Tea Scene">
+                    <rect width="420" height="240" rx="14" fill="#ecfdf5" />
+                    <circle cx="360" cy="45" r="22" fill="#fbbf24" />
+                    <rect x="65" y="105" width="18" height="95" fill="#78350f" />
+                    <circle cx="74" cy="80" r="42" fill="#10b981" />
+                    <circle cx="95" cy="65" r="7" fill="#047857" />
+                    <rect x="145" y="160" width="160" height="16" rx="4" fill="#b45309" />
+                    <rect x="155" y="176" width="10" height="28" fill="#78350f" />
+                    <rect x="285" y="176" width="10" height="28" fill="#78350f" />
+                    <ellipse cx="220" cy="150" rx="14" ry="10" fill="#059669" />
+                    <rect x="245" y="148" width="10" height="10" fill="#047857" />
+                    <circle cx="180" cy="128" r="14" fill="#065f46" />
+                    <circle cx="275" cy="134" r="11" fill="#047857" />
+                    <rect x="265" y="148" width="22" height="12" fill="#34d399" />
+                    <text x="75" y="225" fill="#065f46" font-size="12" font-weight="bold">Scene Items: Courtyard, Tree, Sparrow, Charpoy, Grandmother, Teapot, Cup, Child, Book</text>
+                  </svg>
+                </div>
+
+                <div class="picture-story-inputs">
+                  <div class="form-field">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                      <label>Spoken Description of the Scene:</label>
+                      <button type="button" class="btn-field-mic" data-voice-field="t4Response">🎙️ Speak Story Aloud</button>
+                    </div>
+                    <textarea id="t4Response" rows="4">In the courtyard grandmother is sitting on a charpoy under a green tree holding a teapot and cup while a child reads a book and a sparrow watches from the branch.</textarea>
+                  </div>
+                  <div class="form-field">
+                    <label>Longest Speech Pause Observed (milliseconds):</label>
+                    <input type="number" id="t4PauseMs" value="1400" min="0" max="60000" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TEST 5: CLOCK DRAWING (CANVAS + VISION CHECKLIST) -->
+            <div class="test-pane hidden" id="testPane5">
+              <div class="clock-test-grid">
+                <div class="clock-canvas-box">
+                  <div class="clock-canvas-header">
+                    <strong>Draw a Clock Showing <span id="t5TargetTime">11:10</span></strong>
+                    <div class="clock-canvas-actions">
+                      <button type="button" class="mode-pill" id="btnDrawSampleClock">Auto-Draw Sample Clock</button>
+                      <button type="button" class="mode-pill" id="btnClearClockCanvas">Clear Canvas</button>
+                    </div>
+                  </div>
+                  <canvas id="clockCanvas" width="280" height="280" class="drawing-canvas"></canvas>
+                  <button type="button" class="btn-upload-main" id="btnRunClockVisionCheck" style="margin-top: 10px;">
+                    Run Vision Checklist Pre-Fill
+                  </button>
+                </div>
+
+                <div class="clock-checklist-box">
+                  <h4>Caregiver Confirmation Checklist (Required Before Saving)</h4>
+                  <p class="scanner-card__hint">Verify or edit the 6 clock elements drawn by the person:</p>
+                  <label class="consent-row"><input type="checkbox" id="chkClockCircle" checked /> <span>1. Closed circle drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockNumbers" checked /> <span>2. All 12 numbers present</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockOrder" checked /> <span>3. Numbers in correct order</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockSpacing" checked /> <span>4. Numbers spaced evenly</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTwoHands" checked /> <span>5. Two clock hands drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTimeMatch" checked /> <span>6. Hands point to target time (11:10)</span></label>
+                </div>
+              </div>
+            </div>
+
+            <!-- TEST 6: DOT CONNECTING (1 TO 12 TOUCH GAME) -->
+            <div class="test-pane hidden" id="testPane6">
+              <div class="dot-game-header">
+                <div>
+                  <strong>Tap Numbered Dots 1 to 12 in Order (1 &rarr; 2 &rarr; 3 ... &rarr; 12)</strong>
+                  <p>Progress: <strong id="dotGameProgress">12 / 12</strong> · Elapsed: <strong id="dotGameTime">24.0s</strong> · Errors: <strong id="dotGameErrors">0</strong></p>
+                </div>
+                <button type="button" class="mode-pill" id="btnResetDotGame">Restart Dot Game</button>
+              </div>
+              <div class="dot-game-board" id="dotGameBoard"></div>
+            </div>
+
+            <!-- TEST 7: WORD RECALL (DELAYED RECALL VIA VOICE) -->
+            <div class="test-pane hidden" id="testPane7">
+              <div class="word-bank-display">
+                <strong>Delayed Word Recall (Memory Check)</strong>
+                <p>Without looking at the earlier cards, speak the 5 words that were presented in Test 2:</p>
+              </div>
+              <div class="form-field" style="margin-top: 16px;">
+                <label>Words Recalled Now (Captured via Voice):</label>
+                <div class="input-with-mic">
+                  <input type="text" id="t7Response" value="river mango window lantern" placeholder="Speak the words you remember..." />
+                  <button type="button" class="btn-field-mic" data-voice-field="t7Response">🎙️ Speak Words</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Navigation Bar for Guided Session -->
+            <div class="session-footer-bar">
+              <button type="button" class="btn-outline-green" id="btnPrevTest" disabled>&larr; Previous Test</button>
+              <span id="sessionSaveIndicator" class="verified-pill">Auto-saves each test</span>
+              <button type="button" class="btn-glow-green" id="btnSaveAndNextTest">
+                <span id="btnNextTestLabel">Save Test 1 &amp; Continue &rarr;</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =======================================================
+           SECTION 3: RESULT, TREND HISTORY & ONE-PAGE REPORT
+           ======================================================= -->
+      <section class="page-section" id="section-result" data-page="result">
+        <div class="scanner-clean-layout">
+          <div class="detailed-report-card">
+            <div class="report-header">
+              <div>
+                <span class="card-step-tag" id="resOutcomeTag">Screening Aid Only · Please Consult a Doctor</span>
+                <h3 id="resOutcomeHeadline">Complete a Session to View Your Cognitive Outcome</h3>
+                <p id="resOutcomeGentleText">
+                  Every result is a home screening aid and not a medical diagnosis. If a person was tired or unwell, they can retake the session after a rest.
+                </p>
+              </div>
+              <div class="report-header__actions">
+                <button type="button" class="btn-upload-main" id="btnGeneratePdfReport">
+                  📄 Download One-Page PDF Report
+                </button>
+                <button type="button" class="btn-save" id="btnShareReportLink">
+                  🔗 Create 14-Day Share Link
+                </button>
+                <button type="button" class="mode-pill hidden" id="btnRevokeShareLink">
+                  Revoke Share Link
+                </button>
+              </div>
+            </div>
+
+            <!-- Share Link Banner -->
+            <div class="share-link-banner hidden" id="shareLinkBox">
+              <span>Read-Only Doctor Share Link (Valid 14 Days): <strong id="shareLinkUrlText"></strong></span>
+              <button type="button" class="mode-pill" id="btnWhatsAppShare">Share via WhatsApp</button>
+            </div>
+
+            <div class="report-body-grid">
+              <!-- Total Score Circle & Next Step Actions -->
+              <div class="report-visual-box">
+                <div class="report-visual-box__title">Session Total Score (0–100)</div>
+                <div class="score-big-circle">
+                  <span id="resTotalScoreVal">—</span>
+                </div>
+                <p id="resNextStepBadge" class="applied-chip" style="display:inline-block;margin-bottom:12px;">Next Step: Pending Session</p>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <button type="button" class="btn-run-full" data-nav-target="doctors">
+                    Find a Doctor in My City &rarr;
+                  </button>
+                  <button type="button" class="btn-outline-green" data-nav-target="session">
+                    Retake After Rest
+                  </button>
+                </div>
+              </div>
+
+              <!-- Domain Scores, Per-Test Breakdown & Trend -->
+              <div class="report-details-col">
+                <div class="report-block">
+                  <h4>1. Cognitive Domain Scores (0–100)</h4>
+                  <div class="report-metrics-grid" id="resDomainGrid">
+                    <div class="report-metric-item"><span class="metric-label">Orientation</span><strong class="metric-val" id="domOrientation">—</strong></div>
+                    <div class="report-metric-item"><span class="metric-label">Memory</span><strong class="metric-val" id="domMemory">—</strong></div>
+                    <div class="report-metric-item"><span class="metric-label">Language</span><strong class="metric-val" id="domLanguage">—</strong></div>
+                    <div class="report-metric-item"><span class="metric-label">Planning &amp; Spatial</span><strong class="metric-val" id="domPlanning">—</strong></div>
+                    <div class="report-metric-item"><span class="metric-label">Attention &amp; Speed</span><strong class="metric-val" id="domAttention">—</strong></div>
+                  </div>
+                </div>
+
+                <div class="report-block">
+                  <h4>2. Per-Test Breakdown (Tests 1 to 7)</h4>
+                  <div class="report-findings-list" id="resPerTestList">
+                    <div class="finding-card"><strong>No session completed yet</strong><span>Finish the 7 guided tests to see per-test scores and markers.</span></div>
+                  </div>
+                </div>
+
+                <div class="report-block report-block--highlight">
+                  <h4>3. Longitudinal Score Trend Across Sessions</h4>
+                  <div id="resTrendList" class="trend-bars-wrap">
+                    <p>Take your first session to start tracking longitudinal score history.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =======================================================
+           SECTION 4: DOCTORS DIRECTORY & DIRECT CALL
+           ======================================================= -->
+      <section class="page-section" id="section-doctors" data-page="doctors">
+        <div class="scanner-clean-layout">
+          <div class="scanner-card">
+            <div class="scanner-card__head">
+              <div>
+                <span class="card-step-tag">Stage 2 · Specialist Directory</span>
+                <h3>Find Neurologists, Geriatricians &amp; Memory Clinics</h3>
+              </div>
+              <button type="button" class="btn-outline-green" id="btnAddVerifiedDoctorDemo">
+                + Add Verified Clinic Listing (Admin)
+              </button>
+            </div>
+
+            <!-- Search Filters -->
+            <div class="form-grid-4">
+              <div class="form-field">
+                <label>City</label>
+                <select id="filterDocCity">
+                  <option value="">All Cities</option>
+                  <option value="Lahore">Lahore</option>
+                  <option value="Karachi">Karachi</option>
+                  <option value="Islamabad">Islamabad</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Specialty</label>
+                <select id="filterDocSpecialty">
+                  <option value="">All Specialties</option>
+                  <option value="neurologist">Neurologist</option>
+                  <option value="geriatrician">Geriatrician</option>
+                  <option value="psychiatrist">Psychiatrist</option>
+                  <option value="memory_clinic">Memory Clinic</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Consultation Mode</label>
+                <select id="filterDocMode">
+                  <option value="">In-Person &amp; Online</option>
+                  <option value="in_person">In-Person</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+              <div class="form-field" style="display:flex;align-items:flex-end;">
+                <button type="button" class="btn-run-full" id="btnSearchDoctors">Filter Doctors</button>
+              </div>
+            </div>
+
+            <div class="doctors-grid" id="doctorsListContainer"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =======================================================
+           SECTION 5: POST-VISIT REPORT, CONFIRMED MEDICINES & MONTHLY SUMMARY
+           ======================================================= -->
+      <section class="page-section" id="section-postvisit" data-page="postvisit">
+        <div class="scanner-clean-layout">
+          <div class="scanner-work-grid">
+            <!-- LEFT: UPLOAD DOCTOR REPORT & CONFIRM PRESCRIPTION -->
+            <div class="scanner-card">
+              <div class="scanner-card__head">
+                <div>
+                  <span class="card-step-tag">Stage 3 · Post-Visit Care</span>
+                  <h3>1. Upload Doctor's Report &amp; Confirm Medicines</h3>
+                </div>
+                <span class="verified-pill">Private Storage</span>
+              </div>
+
+              <div class="form-grid-2">
+                <div class="form-field">
+                  <label>Doctor's Findings (in your own words)</label>
+                  <input type="text" id="inpDocFindings" value="Mild memory recall difficulty; follow up in 30 days." />
+                </div>
+                <div class="form-field">
+                  <label>Follow-Up Retest Interval (Days)</label>
+                  <input type="number" id="inpFollowupDays" value="30" min="7" max="180" />
+                </div>
+              </div>
+
+              <button type="button" class="btn-outline-green" id="btnUploadDoctorDoc">
+                📤 Save Uploaded Doctor Report
+              </button>
+
+              <hr style="border:none;border-top:1px solid var(--border-subtle);" />
+
+              <h4>Confirm Prescribed Medicine (Required Before Reminders)</h4>
+              <p class="scanner-card__hint">
+                Safety rule: Yaadasht never prescribes or changes doses. Check every line against your doctor's paper prescription before confirming.
+              </p>
+
+              <div class="form-grid-2">
+                <div class="form-field">
+                  <label>Medicine Name (as written by doctor)</label>
+                  <input type="text" id="inpMedName" value="Donepezil" />
+                </div>
+                <div class="form-field">
+                  <label>Prescribed Dose</label>
+                  <input type="text" id="inpMedDose" value="5 mg" />
+                </div>
+                <div class="form-field">
+                  <label>Times Per Day</label>
+                  <input type="number" id="inpMedFreq" value="1" min="1" max="6" />
+                </div>
+                <div class="form-field">
+                  <label>Reminder Time (HH:MM)</label>
+                  <input type="text" id="inpMedTime" value="21:00" />
+                </div>
+              </div>
+
+              <label class="consent-row">
+                <input type="checkbox" id="chkConfirmMedicine" checked />
+                <strong>I confirm that this medicine name, dose, and schedule match the doctor's prescription.</strong>
+              </label>
+
+              <button type="button" class="btn-run-full" id="btnSaveConfirmedMedicine">
+                ✓ Confirm &amp; Schedule Daily Medicine Reminder
+              </button>
+            </div>
+
+            <!-- RIGHT: DAILY MEDICINE LOG & MONTHLY REPORT -->
+            <div class="scanner-card">
+              <div class="scanner-card__head">
+                <div>
+                  <span class="card-step-tag">Daily Adherence &amp; Monthly Report</span>
+                  <h3>2. Today's Medicine Log &amp; Monthly Summary</h3>
+                </div>
+                <button type="button" class="btn-upload-main" id="btnGenerateMonthlySummary">
+                  📊 Build Monthly Summary &amp; Report
+                </button>
+              </div>
+
+              <div id="confirmedMedicinesList" class="report-findings-list">
+                <div class="finding-card">
+                  <strong>No confirmed medicines yet</strong>
+                  <span>Confirm a medicine on the left to start logging daily Taken or Skipped doses.</span>
+                </div>
+              </div>
+
+              <div id="medicineLogFeedback" class="scanner-card__hint"></div>
+
+              <div class="report-block report-block--highlight hidden" id="monthlySummaryBox">
+                <h4>Monthly Post-Visit Summary Report</h4>
+                <p id="monthlySummaryText"></p>
+              </div>
+
+              <!-- Static Caregiver Routine Tips (No Medicine Advice) -->
+              <div class="report-block">
+                <h4>Caregiver Home Routine &amp; Safety Tips</h4>
+                <p style="font-size:13.5px;color:var(--text-mid);">
+                  • Keep daily meals, activities, and sleep at consistent times.<br />
+                  • Keep walkways well-lit and clear of loose rugs or trip hazards.<br />
+                  • Take caregiver rest breaks; never change any medicine dose without asking your doctor.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =======================================================
+           SECTION 6: SETTINGS, PRIVACY & FULL DATA DELETION
+           ======================================================= -->
+      <section class="page-section" id="section-settings" data-page="settings">
+        <div class="about-full">
+          <div class="scanner-card">
+            <span class="card-step-tag">Privacy, Safety &amp; Consents</span>
+            <h3>Data Ownership &amp; Emergency Safety Check</h3>
+            <p class="scanner-card__hint">
+              All recordings and reports are private to your account under Row Level Security. You may delete all recorded audio, test sessions, and profile data at any time.
+            </p>
+
+            <div class="form-field" style="margin-top: 12px;">
+              <label>Test Emergency Phrase Detector (Safety Verification):</label>
+              <div style="display:flex;gap:10px;">
+                <input type="text" id="inpSafetyTestPhrase" placeholder="Type a phrase to test safety scanner..." />
+                <button type="button" class="btn-outline-green" id="btnTestSafetyPhrase">Check Safety</button>
+              </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+              <button type="button" class="btn-danger-delete" id="btnDeleteAllUserData">
+                🗑 Delete All My Profile Data, Sessions &amp; Audio Files
+              </button>
+            </div>
+          </div>
+
+          <div class="live-health-panel">
+            <div class="health-pulse-circle">
+              <span class="status-dot" id="healthDot"></span>
+            </div>
+            <div>
+              <div class="health-title" id="healthLabel">Yaadasht API Online</div>
+              <div class="health-sub">Screening Aid Only · <span id="aboutVersion">v2.0.0</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- =========================================================
+         FULL-WIDTH SOLID FOOTER
+         ========================================================= -->
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <div class="site-footer__left">
+          <img src="/assets/logo.png" alt="Yaadasht" class="footer-logo-img" />
+          <strong>Yaadasht</strong>
+          <span>Screening aid only, not a medical diagnosis. Please consult a qualified doctor.</span>
+        </div>
+        <div class="site-footer__right">
+          <span>&copy; 2026 Yaadasht Cognitive Care</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="/assets/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,272 @@
+.page-wrapper {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================================================
+   PREMIUM 3-ZONE EMERALD APP BAR
+   ========================================================= */
+.appbar {
+  width: 100%;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(52, 211, 153, 0.22) 0%, transparent 65%),
+    linear-gradient(115deg, #033728 0%, #065f46 50%, #044331 100%);
+  color: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid rgba(110, 231, 183, 0.24);
+  box-shadow: 0 10px 30px -6px rgba(3, 55, 40, 0.28);
+}
+
+.appbar__glow-line {
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #059669 0%, #34d399 50%, #059669 100%);
+}
+
+.appbar__inner {
+  width: 100%;
+  padding: 0 5vw;
+  height: 76px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 20px;
+}
+
+.appbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+  text-decoration: none;
+  color: #ffffff;
+  justify-self: start;
+  transition: transform 0.22s ease;
+}
+
+.appbar__brand:hover {
+  transform: translateY(-1px);
+}
+
+.appbar__logo-wrap {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), 0 0 0 3px rgba(52, 211, 153, 0.25);
+}
+
+.appbar__logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 22%;
+  transform: scale(1.42);
+}
+
+.appbar__brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.appbar__name {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #ffffff;
+}
+
+.appbar__name span {
+  color: #6ee7b7;
+}
+
+.appbar__sub {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(167, 243, 208, 0.85);
+  margin-top: 2px;
+}
+
+/* Center Frosted Glass Navigation Dock */
+.appbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(2, 34, 25, 0.45);
+  backdrop-filter: blur(12px);
+  padding: 6px;
+  border-radius: 99px;
+  border: 1px solid rgba(167, 243, 208, 0.2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 22px;
+  border: none;
+  background: transparent;
+  border-radius: 99px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: rgba(236, 253, 245, 0.82);
+  cursor: pointer;
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-link svg {
+  opacity: 0.8;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.nav-link:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-link:hover svg {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.nav-link.active {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+  color: #044e3a;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.nav-link.active svg {
+  opacity: 1;
+  stroke: #059669;
+}
+
+/* Right Status Capsule */
+.appbar__right {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+}
+
+.appbar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(167, 243, 208, 0.26);
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #ecfdf5;
+}
+
+.appbar__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #34d399;
+  animation: pulseRing 2s infinite;
+}
+
+/* =========================================================
+   FULL-PAGE MAIN CONTAINER (SPANS FULL VIEWPORT WIDTH)
+   ========================================================= */
+.main-container {
+  flex: 1;
+  width: 100%;
+  padding: 44px 5vw 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.page-section {
+  display: none;
+  width: 100%;
+}
+
+.page-section.active {
+  display: block;
+}
+
+/* =========================================================
+   FULL-WIDTH SOLID FOOTER
+   ========================================================= */
+.site-footer {
+  width: 100%;
+  background-color: var(--footer-bg);
+  color: #d1fae5;
+  margin-top: auto;
+  border-top: 1px solid rgba(167, 243, 208, 0.15);
+}
+
+.site-footer__inner {
+  width: 100%;
+  padding: 24px 5vw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13.5px;
+}
+
+.site-footer__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.footer-logo-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: #ffffff;
+  object-fit: cover;
+  object-position: center 22%;
+}
+
+.site-footer__left strong {
+  color: #ffffff;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.site-footer__left span {
+  color: #a7f3d0;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.site-footer__right {
+  color: #a7f3d0;
+}
+
+@media (max-width: 900px) {
+  .appbar__inner {
+    height: auto;
+    padding: 14px 5vw;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 12px;
+  }
+  .appbar__brand,
+  .appbar__right {
+    justify-self: center;
+  }
+  .site-footer__inner {
+    flex-direction: column;
+    text-align: center;
+  }
+}

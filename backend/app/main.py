@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.core.config import settings
 from backend.app.routers import (
     admin,
+    ai,
     auth,
     doctors,
     post_visit,
@@ -69,6 +70,7 @@ def create_application() -> FastAPI:
     application.include_router(reminders.router)
     application.include_router(safety.router)
     application.include_router(admin.router)
+    application.include_router(ai.router)
 
     return application
 

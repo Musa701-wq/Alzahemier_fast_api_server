@@ -22,7 +22,13 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     JWT_SECRET: str = "yaadasht-local-dev-secret-key-change-in-prod"
 
-    OPENAI_API_KEY: str = ""
+    # OpenRouter AI Configuration
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL: str = "openrouter/auto"
+    SITE_URL: str = "http://127.0.0.1:8000"
+    SITE_NAME: str = "Yaadasht Cognitive Screening"
+
     MAX_AUDIO_SIZE_MB: int = 15
     MAX_DOCUMENT_SIZE_MB: int = 20
     DEFAULT_SHARE_EXPIRY_DAYS: int = 14
@@ -34,10 +40,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True,
+        case_sensitive=False,
         extra="ignore",
     )
 
 
 settings = Settings()
-

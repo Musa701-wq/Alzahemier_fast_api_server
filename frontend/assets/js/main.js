@@ -8,6 +8,10 @@ import {
   createSessionReport,
   deletePersonAndAllData,
   downloadReportPdfBlob,
+  evaluateClockVisionAI,
+  evaluatePictureStoryAI,
+  extractPrescriptionAI,
+  fetchAIStatus,
   fetchHealthStatus,
   generateMonthlySummary,
   grantConsent,
@@ -94,10 +98,10 @@ function populateDefaultOrientationInputs() {
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    console.warn("Speech Recognition API not supported in this browser environment. Verbal input will use keyboard fallback.");
+    console.warn("Speech Recognition API not supported in this browser. Keyboard input is fully enabled.");
     const bubble = document.getElementById("liveVoiceText");
     if (bubble) {
-      bubble.textContent = "Speech recognition is active in Chrome/Edge/Safari. Keyboard input remains fully enabled.";
+      bubble.textContent = "Microphone listening is ready via Web Speech API in Chrome/Edge/Safari.";
     }
     return;
   }
@@ -138,16 +142,14 @@ function initSpeechRecognition() {
     };
 
     speechRecognitionInstance.onerror = (event) => {
-      console.warn("Speech recognition notice/error:", event.error);
       if (event.error !== "no-speech") {
         const bubble = document.getElementById("liveVoiceText");
-        if (bubble) bubble.textContent = `Speech Notice: ${event.error}. You can also type answers.`;
+        if (bubble) bubble.textContent = `Speech Notice: ${event.error}. Keyboard input is always active.`;
       }
     };
 
     speechRecognitionInstance.onend = () => {
       if (isListening) {
-        // Keep listening if user hasn't explicitly stopped, especially during Test 3
         try {
           speechRecognitionInstance.start();
         } catch {
@@ -219,7 +221,6 @@ function handleSpokenTranscript(spokenText) {
 
 /**
  * Natural language parser for speaking all orientation questions at once.
- * E.g. "Today is Monday November 5th autumn in Lahore"
  */
 function parseOrientationSpeech(lower, raw) {
   const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -229,42 +230,42 @@ function parseOrientationSpeech(lower, raw) {
   ];
   const seasons = ["winter", "spring", "summer", "autumn", "fall"];
 
-  // Detect day
   for (const d of days) {
     if (lower.includes(d)) {
-      document.getElementById("t1Day").value = d.charAt(0).toUpperCase() + d.slice(1);
+      const el = document.getElementById("t1Day");
+      if (el) el.value = d.charAt(0).toUpperCase() + d.slice(1);
       break;
     }
   }
 
-  // Detect month
   for (const m of months) {
     if (lower.includes(m)) {
-      document.getElementById("t1Month").value = m.charAt(0).toUpperCase() + m.slice(1);
+      const el = document.getElementById("t1Month");
+      if (el) el.value = m.charAt(0).toUpperCase() + m.slice(1);
       break;
     }
   }
 
-  // Detect season
   for (const s of seasons) {
     if (lower.includes(s)) {
       const canonical = s === "fall" ? "Autumn" : s.charAt(0).toUpperCase() + s.slice(1);
-      document.getElementById("t1Season").value = canonical;
+      const el = document.getElementById("t1Season");
+      if (el) el.value = canonical;
       break;
     }
   }
 
-  // Detect numeric date (1-31)
   const dateMatch = lower.match(/\b(3[01]|[12][0-9]|[1-9])(st|nd|rd|th)?\b/);
   if (dateMatch) {
-    document.getElementById("t1Date").value = dateMatch[1];
+    const el = document.getElementById("t1Date");
+    if (el) el.value = dateMatch[1];
   }
 
-  // Detect common Pakistani & world cities
   const cities = ["lahore", "karachi", "islamabad", "rawalpindi", "peshawar", "quetta", "faisalabad", "multan", "london", "dubai"];
   for (const c of cities) {
     if (lower.includes(c)) {
-      document.getElementById("t1City").value = c.charAt(0).toUpperCase() + c.slice(1);
+      const el = document.getElementById("t1City");
+      if (el) el.value = c.charAt(0).toUpperCase() + c.slice(1);
       break;
     }
   }
@@ -275,7 +276,6 @@ function parseOrientationSpeech(lower, raw) {
  */
 function toggleSpeechRecognition(targetField = null) {
   if (!speechRecognitionInstance) {
-    // Simulated speech entry fallback if Web Speech API is absent or blocked in environment
     const testTargets = {
       1: "t1Day",
       2: "t2Response",
@@ -284,21 +284,18 @@ function toggleSpeechRecognition(targetField = null) {
       7: "t7Response",
     };
     const target = targetField || testTargets[currentStep] || "t1Day";
-    const el = document.getElementById(target);
     const bubble = document.getElementById("liveVoiceText");
-    if (bubble) bubble.textContent = `Mic active. Ready to speak into ${target}.`;
+    if (bubble) bubble.textContent = `Mic active. Ready to enter text into ${target}.`;
     return;
   }
 
   activeMicField = targetField;
 
   if (isListening && !targetField) {
-    // Stop recording
     isListening = false;
     try { speechRecognitionInstance.stop(); } catch {}
     updateMicUIState(false);
   } else {
-    // Start recording
     isListening = true;
     try {
       speechRecognitionInstance.start();
@@ -325,7 +322,6 @@ function updateMicUIState(listening) {
       : "Speak Answer";
   }
 
-  // Update field mic buttons
   document.querySelectorAll(".btn-field-mic").forEach((fBtn) => {
     const isTarget = listening && fBtn.dataset.voiceField === activeMicField;
     fBtn.classList.toggle("listening", isTarget);
@@ -341,6 +337,8 @@ async function bootstrapAccountAndDemoData() {
     const { data } = await fetchHealthStatus();
     const verEl = document.getElementById("aboutVersion");
     if (verEl) verEl.textContent = `v${data.version}`;
+    const healthDot = document.getElementById("healthDot");
+    if (healthDot) healthDot.style.background = "#10b981";
   } catch {
     // Ignore
   }
@@ -411,21 +409,45 @@ async function bootstrapAccountAndDemoData() {
       source: "public_clinic_registry",
     });
 
-    const docs = await listDoctors();
-    renderDoctorsList(docs);
+    await refreshDoctorsList();
   } catch (err) {
     console.warn("Bootstrap notice:", err);
   }
 }
 
-async function ensurePersonAndSessionReady() {
-  const name = document.getElementById("inpPersonName").value.trim() || "Abdul Sattar";
-  const age = Number(document.getElementById("inpPersonAge").value || 68);
-  const gender = document.getElementById("inpPersonGender").value || "male";
-  const city = document.getElementById("inpPersonCity").value || "Lahore";
+async function refreshDoctorsList(filterParams = {}) {
+  const docs = await listDoctors(filterParams);
+  renderDoctorsList(docs, async (docId) => {
+    try {
+      if (!currentCompletedSession) {
+        alert("Please complete the cognitive screening test session first before sharing your report with a doctor.");
+        return;
+      }
+      if (!currentReport) {
+        currentReport = await createSessionReport(currentCompletedSession.id);
+      }
+      currentReport = await createReportShareLink(currentReport.id, "whatsapp");
+      const shareUrl = `${window.location.origin}/public/reports/${currentReport.share_token}`;
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareUrl);
+        alert(`Report share link copied to clipboard for doctor!\n\nLink: ${shareUrl}`);
+      } else {
+        alert(`Report share link for doctor:\n\n${shareUrl}`);
+      }
+    } catch (err) {
+      alert(err.message || "Could not generate share link.");
+    }
+  });
+}
 
-  const chkAudio = document.getElementById("chkConsentAudio").checked;
-  const chkData = document.getElementById("chkConsentData").checked;
+async function ensurePersonAndSessionReady() {
+  const name = document.getElementById("inpPersonName")?.value.trim() || "Abdul Sattar";
+  const age = Number(document.getElementById("inpPersonAge")?.value || 68);
+  const gender = document.getElementById("inpPersonGender")?.value || "male";
+  const city = document.getElementById("inpPersonCity")?.value || "Lahore";
+
+  const chkAudio = document.getElementById("chkConsentAudio")?.checked;
+  const chkData = document.getElementById("chkConsentData")?.checked;
   if (!chkAudio || !chkData) {
     alert("Please accept both consent checkboxes before starting the recorded cognitive tests.");
     return false;
@@ -441,14 +463,17 @@ async function ensurePersonAndSessionReady() {
   await grantConsent(currentPerson.id, "report_sharing");
   await grantConsent(currentPerson.id, "document_upload");
 
-  document.getElementById("activePersonBadge").textContent = `${currentPerson.name} (${currentPerson.city})`;
-  document.getElementById("onboardStatusBadge").textContent = "Consented ✓";
-  document.getElementById("t1City").value = currentPerson.city;
+  const badge = document.getElementById("activePersonBadge");
+  if (badge) badge.textContent = `${currentPerson.name} (${currentPerson.city})`;
+  const onboardBadge = document.getElementById("onboardStatusBadge");
+  if (onboardBadge) onboardBadge.textContent = "Consented ✓";
+  const cityEl = document.getElementById("t1City");
+  if (cityEl) cityEl.value = currentPerson.city;
 
   currentSession = await startSession(currentPerson.id);
-  document.getElementById("sessionBankBadge").textContent = `Item Bank v${currentSession.item_bank_version}`;
+  const bankBadge = document.getElementById("sessionBankBadge");
+  if (bankBadge) bankBadge.textContent = `Item Bank v${currentSession.item_bank_version}`;
 
-  // Update Test 2 word chips from English item bank
   const prompts = currentSession.item_prompts || {};
   if (prompts.words_en) {
     const chipsContainer = document.getElementById("t2WordChips");
@@ -457,8 +482,10 @@ async function ensurePersonAndSessionReady() {
         .map((wEn) => `<span class="word-chip">${wEn}</span>`)
         .join("");
     }
-    document.getElementById("t2Response").value = prompts.words_en.join(" ");
-    document.getElementById("t7Response").value = prompts.words_en.slice(0, 4).join(" ");
+    const t2 = document.getElementById("t2Response");
+    if (t2) t2.value = prompts.words_en.join(" ");
+    const t7 = document.getElementById("t7Response");
+    if (t7) t7.value = prompts.words_en.slice(0, 4).join(" ");
   }
 
   return true;
@@ -577,8 +604,12 @@ function initClockCanvas() {
  * Initialize 1-to-12 Dot Connecting Touch Game (Test 6)
  */
 function initDotConnectingGame() {
-  const container = document.getElementById("dotGameContainer");
+  const container = document.getElementById("dotGameBoard");
   if (!container) return;
+
+  const progressEl = document.getElementById("dotGameProgress");
+  const timeEl = document.getElementById("dotGameTime");
+  const errEl = document.getElementById("dotGameErrors");
 
   const dotCoords = [
     { x: 30, y: 35 }, { x: 80, y: 70 }, { x: 140, y: 30 },
@@ -593,6 +624,10 @@ function initDotConnectingGame() {
     dotErrors = 0;
     dotDurationSec = 24.0;
     container.innerHTML = "";
+
+    if (progressEl) progressEl.textContent = "0 / 12";
+    if (timeEl) timeEl.textContent = "0.0s";
+    if (errEl) errEl.textContent = "0";
 
     dotCoords.forEach((coord, idx) => {
       const num = idx + 1;
@@ -611,14 +646,20 @@ function initDotConnectingGame() {
         if (num === dotNextExpected) {
           dot.classList.add("connected");
           dotNextExpected += 1;
+          const completedCount = dotNextExpected - 1;
+          if (progressEl) progressEl.textContent = `${completedCount} / 12`;
+
+          const now = performance.now();
+          const elapsed = dotStartTime ? ((now - dotStartTime) / 1000).toFixed(1) : "0.0";
+          if (timeEl) timeEl.textContent = `${elapsed}s`;
+
           if (dotNextExpected > 12) {
-            const elapsed = ((performance.now() - dotStartTime) / 1000).toFixed(1);
             dotDurationSec = Number(elapsed);
-            document.getElementById("dotTimerFeedback").textContent =
-              `Game Completed in ${elapsed}s! (Errors: ${dotErrors}) ✓`;
+            if (timeEl) timeEl.textContent = `${elapsed}s (Done!)`;
           }
         } else if (num > dotNextExpected) {
           dotErrors += 1;
+          if (errEl) errEl.textContent = String(dotErrors);
           dot.classList.add("error");
           setTimeout(() => dot.classList.remove("error"), 400);
         }
@@ -626,9 +667,6 @@ function initDotConnectingGame() {
 
       container.appendChild(dot);
     });
-
-    const fb = document.getElementById("dotTimerFeedback");
-    if (fb) fb.textContent = "Tap 1 to begin. Connect numbers up to 12.";
   }
 
   document.getElementById("btnResetDotGame")?.addEventListener("click", resetGame);
@@ -651,36 +689,36 @@ async function saveCurrentStepResult(stepNum) {
       test_number: 1,
       test_type: "orientation",
       answers: {
-        day: document.getElementById("t1Day").value,
-        date: document.getElementById("t1Date").value,
-        month: document.getElementById("t1Month").value,
-        season: document.getElementById("t1Season").value,
-        city: document.getElementById("t1City").value,
+        day: document.getElementById("t1Day")?.value || "",
+        date: document.getElementById("t1Date")?.value || "",
+        month: document.getElementById("t1Month")?.value || "",
+        season: document.getElementById("t1Season")?.value || "",
+        city: document.getElementById("t1City")?.value || "",
       },
-      raw_response: `${document.getElementById("t1Day").value} ${document.getElementById("t1Date").value} ${document.getElementById("t1Month").value} ${document.getElementById("t1Season").value} ${document.getElementById("t1City").value}`,
+      raw_response: `${document.getElementById("t1Day")?.value || ""} ${document.getElementById("t1Date")?.value || ""} ${document.getElementById("t1Month")?.value || ""} ${document.getElementById("t1Season")?.value || ""} ${document.getElementById("t1City")?.value || ""}`,
       audio_path: `audio/${currentSession.id}_test1.webm`,
     };
   } else if (stepNum === 2) {
     payload = {
       test_number: 2,
       test_type: "word_recall_immediate",
-      raw_response: document.getElementById("t2Response").value,
+      raw_response: document.getElementById("t2Response")?.value || "",
       audio_path: `audio/${currentSession.id}_test2.webm`,
     };
   } else if (stepNum === 3) {
     payload = {
       test_number: 3,
       test_type: "animal_naming_60s",
-      raw_response: document.getElementById("t3Response").value,
+      raw_response: document.getElementById("t3Response")?.value || "",
       audio_path: `audio/${currentSession.id}_test3.webm`,
     };
   } else if (stepNum === 4) {
     payload = {
       test_number: 4,
       test_type: "picture_story",
-      raw_response: document.getElementById("t4Response").value,
+      raw_response: document.getElementById("t4Response")?.value || "",
       timing: {
-        longest_pause_ms: Number(document.getElementById("t4PauseMs").value || 1400),
+        longest_pause_ms: Number(document.getElementById("t4PauseMs")?.value || 1400),
       },
       audio_path: `audio/${currentSession.id}_test4.webm`,
     };
@@ -690,12 +728,12 @@ async function saveCurrentStepResult(stepNum) {
       test_type: "clock_drawing",
       stroke_data: { strokes: clockStrokes },
       clock_checklist: {
-        closed_circle: document.getElementById("chkClockCircle").checked,
-        twelve_numbers: document.getElementById("chkClockNumbers").checked,
-        correct_order: document.getElementById("chkClockOrder").checked,
-        correct_spacing: document.getElementById("chkClockSpacing").checked,
-        two_hands: document.getElementById("chkClockTwoHands").checked,
-        hands_match_time: document.getElementById("chkClockTimeMatch").checked,
+        closed_circle: !!document.getElementById("chkClockCircle")?.checked,
+        twelve_numbers: !!document.getElementById("chkClockNumbers")?.checked,
+        correct_order: !!document.getElementById("chkClockOrder")?.checked,
+        correct_spacing: !!document.getElementById("chkClockSpacing")?.checked,
+        two_hands: !!document.getElementById("chkClockTwoHands")?.checked,
+        hands_match_time: !!document.getElementById("chkClockTimeMatch")?.checked,
       },
       confirmed_by_caregiver: true,
     };
@@ -713,13 +751,14 @@ async function saveCurrentStepResult(stepNum) {
     payload = {
       test_number: 7,
       test_type: "word_recall_delayed",
-      raw_response: document.getElementById("t7Response").value,
+      raw_response: document.getElementById("t7Response")?.value || "",
       audio_path: `audio/${currentSession.id}_test7.webm`,
     };
   }
 
   const res = await submitTestResult(currentSession.id, payload);
-  document.getElementById("sessionSaveIndicator").textContent = `Test ${stepNum} Saved (${res.score}/100) ✓`;
+  const indicator = document.getElementById("sessionSaveIndicator");
+  if (indicator) indicator.textContent = `Test ${stepNum} Saved (${res.score}/100) ✓`;
 
   if (res.emergency_detected) {
     showEmergencyBanner({
@@ -847,9 +886,8 @@ function initEventListeners() {
     clearInterval(t3Interval);
     let rem = 60;
     const disp = document.getElementById("t3TimerDisplay");
-    disp.textContent = "60s";
+    if (disp) disp.textContent = "60s";
 
-    // Automatically activate live microphone for animal naming
     activeMicField = "t3Response";
     toggleSpeechRecognition("t3Response");
 
@@ -859,7 +897,7 @@ function initEventListeners() {
 
     t3Interval = setInterval(() => {
       rem -= 1;
-      disp.textContent = `${rem}s`;
+      if (disp) disp.textContent = `${rem}s`;
       if (rem <= 0) {
         clearInterval(t3Interval);
         if (voiceGuideActive) speakInstruction(3, "Time is up! You can review the animal names spoken.");
@@ -868,20 +906,50 @@ function initEventListeners() {
     }, 1000);
   });
 
-  // Test 5 Vision Checklist Pre-Fill
+  // Test 5 Vision Checklist Pre-Fill (Multimodal AI + Stroke Geometry)
   document.getElementById("btnRunClockVisionCheck")?.addEventListener("click", async () => {
-    if (!currentSession) await ensurePersonAndSessionReady();
-    const res = await runClockCheck(currentSession.id, {
-      target_time: "11:10",
-      stroke_data: { strokes: clockStrokes },
-    });
-    const chk = res.checklist;
-    document.getElementById("chkClockCircle").checked = chk.closed_circle;
-    document.getElementById("chkClockNumbers").checked = chk.twelve_numbers;
-    document.getElementById("chkClockOrder").checked = chk.correct_order;
-    document.getElementById("chkClockSpacing").checked = chk.correct_spacing;
-    document.getElementById("chkClockTwoHands").checked = chk.two_hands;
-    document.getElementById("chkClockTimeMatch").checked = chk.hands_match_time;
+    try {
+      if (!currentSession) await ensurePersonAndSessionReady();
+      const canvas = document.getElementById("clockCanvas");
+      const dataUri = canvas ? canvas.toDataURL("image/png") : "";
+
+      let chk = null;
+      try {
+        if (dataUri) {
+          const aiRes = await evaluateClockVisionAI(dataUri);
+          if (aiRes && aiRes.checklist) {
+            chk = aiRes.checklist;
+          }
+        }
+      } catch (e) {
+        console.warn("AI vision fallback:", e);
+      }
+
+      if (!chk) {
+        const res = await runClockCheck(currentSession.id, {
+          target_time: "11:10",
+          stroke_data: { strokes: clockStrokes },
+        });
+        chk = res.checklist;
+      }
+
+      const c1 = document.getElementById("chkClockCircle");
+      if (c1) c1.checked = !!chk.closed_circle;
+      const c2 = document.getElementById("chkClockNumbers");
+      if (c2) c2.checked = !!chk.twelve_numbers;
+      const c3 = document.getElementById("chkClockOrder");
+      if (c3) c3.checked = !!chk.correct_order;
+      const c4 = document.getElementById("chkClockSpacing");
+      if (c4) c4.checked = !!chk.correct_spacing;
+      const c5 = document.getElementById("chkClockTwoHands");
+      if (c5) c5.checked = !!chk.two_hands;
+      const c6 = document.getElementById("chkClockTimeMatch");
+      if (c6) c6.checked = !!chk.hands_match_time;
+
+      alert("Vision checklist successfully updated from clock drawing ✓");
+    } catch (err) {
+      alert("Vision check notice: " + (err.message || err));
+    }
   });
 
   // Previous & Next Test Buttons
@@ -950,7 +1018,8 @@ function initEventListeners() {
       }
       currentReport = await createReportShareLink(currentReport.id, "whatsapp");
       const shareUrl = `${window.location.origin}/public/reports/${currentReport.share_token}`;
-      document.getElementById("shareLinkUrlText").textContent = shareUrl;
+      const urlText = document.getElementById("shareLinkUrlText");
+      if (urlText) urlText.textContent = shareUrl;
       document.getElementById("shareLinkBox")?.classList.remove("hidden");
       document.getElementById("btnRevokeShareLink")?.classList.remove("hidden");
     } catch (err) {
@@ -968,11 +1037,10 @@ function initEventListeners() {
 
   // Doctors Filter & Admin Add
   document.getElementById("btnSearchDoctors")?.addEventListener("click", async () => {
-    const city = document.getElementById("filterDocCity").value;
-    const specialty = document.getElementById("filterDocSpecialty").value;
-    const mode = document.getElementById("filterDocMode").value;
-    const docs = await listDoctors({ city, specialty, mode });
-    renderDoctorsList(docs);
+    const city = document.getElementById("filterDocCity")?.value || "";
+    const specialty = document.getElementById("filterDocSpecialty")?.value || "";
+    const mode = document.getElementById("filterDocMode")?.value || "";
+    await refreshDoctorsList({ city, specialty, mode });
   });
 
   document.getElementById("btnAddVerifiedDoctorDemo")?.addEventListener("click", async () => {
@@ -994,23 +1062,42 @@ function initEventListeners() {
       verified: true,
       source: "admin_verified_entry",
     });
-    const docs = await listDoctors();
-    renderDoctorsList(docs);
+    await refreshDoctorsList();
   });
 
-  // Post-Visit: Upload Doctor Report
+  // Post-Visit: Upload Doctor Report & AI Pre-Fill
   let latestDocId = null;
   document.getElementById("btnUploadDoctorDoc")?.addEventListener("click", async () => {
     if (!currentPerson) await ensurePersonAndSessionReady();
+    const findingsText = document.getElementById("inpDocFindings")?.value || "";
+    const followupDays = Number(document.getElementById("inpFollowupDays")?.value || 30);
+
     const doc = await uploadDoctorDocument({
       person_id: currentPerson.id,
       file_path: `documents/visit_${Date.now()}.jpg`,
       file_type: "image",
-      findings_text: document.getElementById("inpDocFindings").value,
-      followup_interval_days: Number(document.getElementById("inpFollowupDays").value || 30),
+      findings_text: findingsText,
+      followup_interval_days: followupDays,
       watch_domains: ["memory", "orientation"],
     });
     latestDocId = doc.id;
+
+    // AI prescription extraction
+    try {
+      const extracted = await extractPrescriptionAI(findingsText);
+      if (extracted && extracted.medicines && extracted.medicines.length > 0) {
+        const m = extracted.medicines[0];
+        const medName = document.getElementById("inpMedName");
+        if (medName && m.name) medName.value = m.name;
+        const medDose = document.getElementById("inpMedDose");
+        if (medDose && m.dose) medDose.value = m.dose;
+        const medFreq = document.getElementById("inpMedFreq");
+        if (medFreq && m.frequency_per_day) medFreq.value = m.frequency_per_day;
+      }
+    } catch (e) {
+      console.warn("AI prescription pre-fill notice:", e);
+    }
+
     alert("Doctor report saved privately and follow-up retest scheduled ✓");
   });
 
@@ -1036,16 +1123,16 @@ function initEventListeners() {
   document.getElementById("btnSaveConfirmedMedicine")?.addEventListener("click", async () => {
     try {
       if (!currentPerson) await ensurePersonAndSessionReady();
-      const confirmed = document.getElementById("chkConfirmMedicine").checked;
+      const confirmed = document.getElementById("chkConfirmMedicine")?.checked;
       await createConfirmedMedicine({
         person_id: currentPerson.id,
         document_id: latestDocId,
-        name: document.getElementById("inpMedName").value,
-        dose: document.getElementById("inpMedDose").value,
-        frequency_per_day: Number(document.getElementById("inpMedFreq").value || 1),
-        reminder_times: [document.getElementById("inpMedTime").value || "21:00"],
+        name: document.getElementById("inpMedName")?.value || "Donepezil",
+        dose: document.getElementById("inpMedDose")?.value || "5mg",
+        frequency_per_day: Number(document.getElementById("inpMedFreq")?.value || 1),
+        reminder_times: [document.getElementById("inpMedTime")?.value || "21:00"],
         instructions: "Confirmed against doctor prescription report",
-        confirmed_by_user: confirmed,
+        confirmed_by_user: !!confirmed,
       });
       await refreshMeds();
     } catch (err) {
@@ -1074,7 +1161,7 @@ function initEventListeners() {
 
   // Settings: Test Emergency Phrase Detector
   document.getElementById("btnTestSafetyPhrase")?.addEventListener("click", async () => {
-    const text = document.getElementById("inpSafetyTestPhrase").value || "want to die";
+    const text = document.getElementById("inpSafetyTestPhrase")?.value || "want to die";
     const res = await runSafetyCheck(text);
     if (res.emergency_detected) {
       showEmergencyBanner(res);
@@ -1093,7 +1180,8 @@ function initEventListeners() {
     currentPerson = null;
     currentSession = null;
     currentCompletedSession = null;
-    document.getElementById("activePersonBadge").textContent = "Data Deleted";
+    const badge = document.getElementById("activePersonBadge");
+    if (badge) badge.textContent = "Data Deleted";
     alert("All profile data, sessions, reports, and recorded files have been permanently deleted.");
     switchSection("home");
   });

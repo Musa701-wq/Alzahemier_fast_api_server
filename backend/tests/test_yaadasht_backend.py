@@ -636,3 +636,53 @@ def test_openapi_routes_registered():
     for path in expected_paths:
         assert path in paths, f"Missing expected route {path}"
 
+
+def test_ai_endpoints_and_openrouter_configuration():
+    paths = app.openapi()["paths"]
+    assert "/ai/status" in paths
+    assert "/ai/picture-story" in paths
+    assert "/ai/clock-vision" in paths
+    assert "/ai/extract-prescription" in paths
+
+    from backend.app.routers.ai import (
+        ClockVisionAIRequest,
+        PictureStoryAIRequest,
+        PrescriptionExtractRequest,
+        analyze_clock_vision,
+        analyze_picture_story,
+        extract_prescription,
+        get_ai_status,
+    )
+
+    dummy_user = {"id": "test_user_id", "email": "test@example.com"}
+
+    # 1. AI Status check
+    status = get_ai_status(current_user=dummy_user)
+    assert "status" in status
+    assert status["provider"] == "OpenRouter"
+
+    # 2. Picture Story AI Evaluation (safe fallback / AI response)
+    res_story = analyze_picture_story(
+        PictureStoryAIRequest(description="A courtyard scene with grandmother having tea under the green tree."),
+        current_user=dummy_user,
+    )
+    assert "themes_identified" in res_story
+    assert "semantic_score" in res_story
+
+    # 3. Clock Vision AI Evaluation
+    res_clock = analyze_clock_vision(
+        ClockVisionAIRequest(image_data_uri="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),
+        current_user=dummy_user,
+    )
+    assert "checklist" in res_clock
+    assert "closed_circle" in res_clock["checklist"]
+
+    # 4. Prescription Extraction AI
+    res_rx = extract_prescription(
+        PrescriptionExtractRequest(prescription_text="Prescribed Donepezil 5mg once daily at bedtime. Follow up in 30 days."),
+        current_user=dummy_user,
+    )
+    assert "findings_summary" in res_rx
+    assert "medicines" in res_rx
+
+

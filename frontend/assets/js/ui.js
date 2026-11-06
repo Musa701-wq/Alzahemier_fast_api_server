@@ -134,16 +134,28 @@ export function renderCompletedSessionResult(session, allSessions = []) {
     see_doctor: "Outcome: See a Doctor (Specialist Consultation Recommended)",
   };
 
-  document.getElementById("resOutcomeTag").textContent = session.disclaimer;
-  document.getElementById("resOutcomeHeadline").textContent =
-    outcomeTitles[session.outcome] || "Session Completed";
-  document.getElementById("resOutcomeGentleText").textContent =
-    session.outcome_reason || session.disclaimer;
+  const outTag = document.getElementById("resOutcomeTag");
+  if (outTag) outTag.textContent = session.disclaimer || "Screening Aid Only";
 
-  document.getElementById("resTotalScoreVal").textContent =
-    session.total_score !== null ? `${Math.round(session.total_score)}` : "—";
-  document.getElementById("resNextStepBadge").textContent =
-    `Next Step: ${session.next_step || "Follow up"}`;
+  const headline = document.getElementById("resOutcomeHeadline");
+  if (headline) {
+    headline.textContent = outcomeTitles[session.outcome] || "Session Completed";
+  }
+
+  const reason = document.getElementById("resOutcomeGentleText");
+  if (reason) {
+    reason.textContent = session.outcome_reason || session.disclaimer || "";
+  }
+
+  const scoreVal = document.getElementById("resTotalScoreVal");
+  if (scoreVal) {
+    scoreVal.textContent = session.total_score !== null ? `${Math.round(session.total_score)}` : "—";
+  }
+
+  const stepBadge = document.getElementById("resNextStepBadge");
+  if (stepBadge) {
+    stepBadge.textContent = `Next Step: ${session.next_step || "Follow up"}`;
+  }
 
   const homeOut = document.getElementById("homeLastOutcomeText");
   if (homeOut) {
@@ -155,16 +167,16 @@ export function renderCompletedSessionResult(session, allSessions = []) {
   }
 
   const dom = session.domain_scores || {};
-  document.getElementById("domOrientation").textContent =
-    dom.orientation !== undefined ? `${dom.orientation} / 100` : "—";
-  document.getElementById("domMemory").textContent =
-    dom.memory !== undefined ? `${dom.memory} / 100` : "—";
-  document.getElementById("domLanguage").textContent =
-    dom.language !== undefined ? `${dom.language} / 100` : "—";
-  document.getElementById("domPlanning").textContent =
-    dom.planning !== undefined ? `${dom.planning} / 100` : "—";
-  document.getElementById("domAttention").textContent =
-    dom.attention !== undefined ? `${dom.attention} / 100` : "—";
+  const domOrientation = document.getElementById("domOrientation");
+  if (domOrientation) domOrientation.textContent = dom.orientation !== undefined ? `${dom.orientation} / 100` : "—";
+  const domMemory = document.getElementById("domMemory");
+  if (domMemory) domMemory.textContent = dom.memory !== undefined ? `${dom.memory} / 100` : "—";
+  const domLanguage = document.getElementById("domLanguage");
+  if (domLanguage) domLanguage.textContent = dom.language !== undefined ? `${dom.language} / 100` : "—";
+  const domPlanning = document.getElementById("domPlanning");
+  if (domPlanning) domPlanning.textContent = dom.planning !== undefined ? `${dom.planning} / 100` : "—";
+  const domAttention = document.getElementById("domAttention");
+  if (domAttention) domAttention.textContent = dom.attention !== undefined ? `${dom.attention} / 100` : "—";
 
   const perTestEl = document.getElementById("resPerTestList");
   if (perTestEl && session.results) {
@@ -203,7 +215,7 @@ export function renderCompletedSessionResult(session, allSessions = []) {
   }
 }
 
-export function renderDoctorsList(doctors) {
+export function renderDoctorsList(doctors, onShareWithDoctor = null) {
   const container = document.getElementById("doctorsListContainer");
   if (!container) return;
 
@@ -238,7 +250,7 @@ export function renderDoctorsList(doctors) {
           <a href="tel:${doc.phone}" class="btn-upload-main" style="text-decoration:none;">
             📞 Call ${doc.phone}
           </a>
-          <button type="button" class="mode-pill" data-share-doc="${doc.id}">
+          <button type="button" class="mode-pill btn-share-doctor-card" data-share-doc="${doc.id}">
             📤 Share My Report
           </button>
         </div>
@@ -246,6 +258,12 @@ export function renderDoctorsList(doctors) {
     `
     )
     .join("");
+
+  if (onShareWithDoctor) {
+    container.querySelectorAll(".btn-share-doctor-card").forEach((btn) => {
+      btn.addEventListener("click", () => onShareWithDoctor(btn.dataset.shareDoc));
+    });
+  }
 }
 
 export function renderConfirmedMedicines(medicines, onLogDose) {

@@ -49,7 +49,7 @@ export async function fetchHealthStatus() {
   return { data, latencyMs: Math.round(performance.now() - start) };
 }
 
-export async function signupUser({ email, password, full_name, language = "ur", role = "user" }) {
+export async function signupUser({ email, password, full_name, language = "en", role = "user" }) {
   return apiRequest("/auth/signup", {
     method: "POST",
     body: { email, password, full_name, language, role },
@@ -219,5 +219,31 @@ export async function runSafetyCheck(text) {
 export async function deletePersonAndAllData(personId) {
   return apiRequest(`/persons/${personId}`, {
     method: "DELETE",
+  });
+}
+
+// OpenRouter AI Multimodal Endpoints
+export async function fetchAIStatus() {
+  return apiRequest("/ai/status");
+}
+
+export async function evaluatePictureStoryAI(description) {
+  return apiRequest("/ai/picture-story", {
+    method: "POST",
+    body: { description },
+  });
+}
+
+export async function evaluateClockVisionAI(imageDataUri) {
+  return apiRequest("/ai/clock-vision", {
+    method: "POST",
+    body: { image_data_uri: imageDataUri },
+  });
+}
+
+export async function extractPrescriptionAI(prescriptionText, imageDataUri = null) {
+  return apiRequest("/ai/extract-prescription", {
+    method: "POST",
+    body: { prescription_text: prescriptionText, image_data_uri: imageDataUri },
   });
 }

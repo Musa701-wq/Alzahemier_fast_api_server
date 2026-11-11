@@ -28,7 +28,6 @@ from backend.app.models.schemas import (
     TestResultSubmit,
 )
 from backend.app.routers import (
-    admin,
     auth,
     doctors,
     post_visit,
@@ -287,18 +286,11 @@ class TestEndToEndAndRLS:
         assert exc_del.value.status_code == 404
 
     def test_full_pre_visit_doctor_and_post_visit_lifecycle(self):
-        # 1. Signup Caregiver User & Admin User
+        # 1. Signup Caregiver User (Single Role: caregiver)
         user = auth.signup(
             SignupRequest(email="family@example.com", password="password123", full_name="Sara Khan")
         ).profile.model_dump()
-        admin_user = auth.signup(
-            SignupRequest(
-                email="admin@example.com",
-                password="password123",
-                full_name="Admin",
-                role="admin",
-            )
-        ).profile.model_dump()
+        assert user["role"] == "caregiver"
 
         # 2. Create Person Profile & Grant Required Consents
         person = profiles.create_person(
@@ -413,28 +405,7 @@ class TestEndToEndAndRLS:
         )
         assert session_2.item_bank_version == 2
 
-        # 4. Stage 2: Admin Adds Verified Doctor, User Filters & Shares Report
-        doc_created = admin.admin_create_doctor(
-            DoctorCreate(
-                name="Dr. Ayesha Siddiqui",
-                specialty="neurologist",
-                qualifications="MBBS, FCPS (Neurology)",
-                pmdc_number="PMDC-44521-P",
-                clinic_name="Lahore Neuro & Memory Clinic",
-                city="Lahore",
-                address="Jail Road, Lahore",
-                phone="+92-42-35550199",
-                fee_pkr=3000,
-                mode="both",
-                languages=["ur", "en"],
-                years_experience=12,
-                gender="female",
-                available_days=["Mon", "Wed", "Fri"],
-                verified=True,
-                source="public_clinic_directory",
-            ),
-            admin_user=admin_user,
-        )
+        # 4. Stage 2: Caregiver Filters Pre-Seeded Doctors & Shares Report
         found_docs = doctors.list_doctors(
             city="Lahore",
             specialty="neurologist",
@@ -448,8 +419,8 @@ class TestEndToEndAndRLS:
             offset=0,
             current_user=user,
         )
-        assert len(found_docs) == 1
-        assert found_docs[0].id == doc_created.id
+        assert len(found_docs) >= 1
+        doc_created = found_docs[0]
 
         # Create Report, Download PDF, Create Share Link & Verify Public Access
         rep = reports.create_session_report(
@@ -567,38 +538,28 @@ class TestEndToEndAndRLS:
 # 5. Safety Emergency Phrase Detection Tests
 # ============================================================================
 class TestSafetyEmergencyDetection:
-    def test_emergency_phrases_trigger_safety_card_with_admin_resources(self):
-        admin_user = auth.signup(
+    def test_emergency_phrases_trigger_safety_card_with_seeded_resources(self):
+        caregiver = auth.signup(
             SignupRequest(
-                email="safetyadmin@example.com",
+                email="caregiver_safety@example.com",
                 password="password123",
-                full_name="Safety Admin",
-                role="admin",
+                full_name="Safety Caregiver",
             )
         ).profile.model_dump()
-
-        admin.admin_create_safety_resource(
-            SafetyResourceCreate(
-                label="Emergency Rescue Helpline",
-                phone="1122",
-                description="National emergency ambulance and rescue service",
-            ),
-            admin_user=admin_user,
-        )
 
         # Urdu / Roman Urdu / English emergency phrase triggers
         for phrase in ("I want to end my life", "mar jana chahta hoon", "مریض بے ہوش ہے"):
             resp = safety.run_safety_check(
                 SafetyCheckRequest(text=phrase),
-                current_user=admin_user,
+                current_user=caregiver,
             )
             assert resp.emergency_detected is True
-            assert len(resp.resources) == 1
+            assert len(resp.resources) >= 1
             assert resp.resources[0]["phone"] == "1122"
 
         safe_resp = safety.run_safety_check(
             SafetyCheckRequest(text="Today the weather in Lahore is pleasant."),
-            current_user=admin_user,
+            current_user=caregiver,
         )
         assert safe_resp.emergency_detected is False
         assert safe_resp.resources == []
@@ -629,12 +590,11 @@ def test_openapi_routes_registered():
         "/summaries/monthly/generate",
         "/reminders",
         "/safety/resources",
-        "/admin/doctors",
-        "/admin/doctors/import",
-        "/admin/scoring-config",
     ]
     for path in expected_paths:
         assert path in paths, f"Missing expected route {path}"
+    for removed_admin_path in ("/admin/doctors", "/admin/doctors/import", "/admin/scoring-config"):
+        assert removed_admin_path not in paths, f"Admin route {removed_admin_path} should not exist"
 
 
 def test_ai_endpoints_and_openrouter_configuration():
@@ -684,5 +644,182 @@ def test_ai_endpoints_and_openrouter_configuration():
     )
     assert "findings_summary" in res_rx
     assert "medicines" in res_rx
+
+
+def test_personalized_and_post_visit_adaptive_session_generation():
+    user = auth.signup(
+        SignupRequest(email="adaptive@example.com", password="password123", full_name="Zainab Ali")
+    ).profile.model_dump()
+
+    # 1. Create Patient with Clinical Alzheimer's Intake Profile
+    person = profiles.create_person(
+        PersonCreate(
+            name="Haji Abdul Rashid",
+            age=74,
+            gender="male",
+            city="Islamabad",
+            education_level="secondary",
+            occupation="School Teacher",
+            living_situation="with_family",
+            family_history_dementia=True,
+            medical_conditions=["hypertension", "diabetes"],
+            observed_symptoms=["repeating_questions", "misplacing_items"],
+            symptom_duration_months=14,
+        ),
+        current_user=user,
+    )
+    assert person.occupation == "School Teacher"
+    assert "repeating_questions" in person.observed_symptoms
+
+    for ctype in ("audio", "data_processing", "report_sharing", "document_upload"):
+        profiles.grant_consent(
+            ConsentCreate(person_id=person.id, type=ctype, granted=True),
+            current_user=user,
+        )
+
+    # 2. Start Personalized Baseline Session
+    baseline_session = sessions.start_session(
+        SessionStartRequest(person_id=person.id, session_mode="baseline"),
+        current_user=user,
+    )
+    assert baseline_session.session_mode == "baseline"
+    assert len(baseline_session.item_prompts["words_en"]) == 5
+    assert "clock_target_time" in baseline_session.item_prompts
+    assert len(baseline_session.item_prompts["dot_coords"]) == 12
+
+    baseline_words = [
+        w.strip().lower()
+        for w in baseline_session.item_prompts["words_en"]
+    ]
+
+    # Submit low memory & visuospatial scores on baseline session
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(test_number=1, test_type="orientation", answers={"correct_count": 4}),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(
+            test_number=2,
+            test_type="word_recall_immediate",
+            raw_response=baseline_words[0],
+        ),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(test_number=3, test_type="animal_naming", raw_response="cat dog cow goat"),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(
+            test_number=4,
+            test_type="picture_story",
+            raw_response="grandmother sitting on charpoy with tea",
+        ),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(
+            test_number=5,
+            test_type="clock_drawing",
+            clock_checklist=ClockChecklist(
+                closed_circle=True,
+                twelve_numbers=True,
+                correct_order=False,
+                correct_spacing=False,
+                two_hands=False,
+                hands_match_time=False,
+            ),
+            confirmed_by_caregiver=True,
+        ),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(
+            test_number=6,
+            test_type="dot_connecting",
+            timing={"duration_seconds": 65.0, "errors": 2, "completed_dots": 12},
+        ),
+        current_user=user,
+    )
+    results.submit_test_result(
+        baseline_session.id,
+        TestResultSubmit(
+            test_number=7,
+            test_type="word_recall_delayed",
+            raw_response=baseline_words[0],
+        ),
+        current_user=user,
+    )
+    completed_baseline = sessions.complete_session(
+        baseline_session.id, duration_seconds=600, current_user=user
+    )
+    assert completed_baseline.completed is True
+
+    # 3. Upload Post-Visit Doctor Report
+    post_visit.upload_doctor_document(
+        DocumentUploadRequest(
+            person_id=person.id,
+            file_path="documents/followup_notes.jpg",
+            file_type="image",
+            findings_text="Short-term memory and clock hand placement require monthly tracking.",
+            followup_interval_days=30,
+            watch_domains=["memory", "visuospatial"],
+        ),
+        current_user=user,
+    )
+
+    # 4. Start Post-Visit Adaptive Follow-Up Session
+    adaptive_session = sessions.start_session(
+        SessionStartRequest(person_id=person.id, session_mode="post_visit_adaptive"),
+        current_user=user,
+    )
+    assert adaptive_session.session_mode == "post_visit_adaptive"
+    assert adaptive_session.baseline_session_id == completed_baseline.id
+    assert "weak_domains_targeted" in adaptive_session.adaptive_context
+
+    adaptive_words = [
+        w.strip().lower()
+        for w in adaptive_session.item_prompts["words_en"]
+    ]
+    # Words in the adaptive session MUST NOT repeat the baseline session's words
+    assert set(adaptive_words).isdisjoint(set(baseline_words))
+
+    # Submit improved recall on the adaptive follow-up session
+    results.submit_test_result(
+        adaptive_session.id,
+        TestResultSubmit(test_number=1, test_type="orientation", answers={"correct_count": 5}),
+        current_user=user,
+    )
+    results.submit_test_result(
+        adaptive_session.id,
+        TestResultSubmit(
+            test_number=2,
+            test_type="word_recall_immediate",
+            raw_response=" ".join(adaptive_words[:4]),
+        ),
+        current_user=user,
+    )
+    results.submit_test_result(
+        adaptive_session.id,
+        TestResultSubmit(
+            test_number=7,
+            test_type="word_recall_delayed",
+            raw_response=" ".join(adaptive_words[:3]),
+        ),
+        current_user=user,
+    )
+    completed_adaptive = sessions.complete_session(
+        adaptive_session.id, duration_seconds=550, current_user=user
+    )
+    assert completed_adaptive.completed is True
+    assert "memory" in completed_adaptive.domain_deltas
+    assert completed_adaptive.domain_deltas["memory"] > 0
+
 
 

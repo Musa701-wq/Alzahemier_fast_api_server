@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from backend.app.core.config import settings
 from backend.app.routers import (
-    admin,
     ai,
     auth,
     doctors,
@@ -41,15 +40,26 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @application.middleware("http")
+    async def disable_static_cache(request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/assets"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     if ASSETS_DIR.exists():
         application.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
     @application.get("/health", tags=["System Health"])
-    def health_check() -> Dict[str, str]:
+    def health_check() -> Dict[str, object]:
+        from backend.app.db.repository import db
+
         return {
             "status": "ok",
             "app_name": settings.PROJECT_NAME,
             "version": settings.VERSION,
+            "database": db.get_db_status(),
             "disclaimer": settings.SCREENING_DISCLAIMER,
         }
 
@@ -69,7 +79,6 @@ def create_application() -> FastAPI:
     application.include_router(post_visit.router)
     application.include_router(reminders.router)
     application.include_router(safety.router)
-    application.include_router(admin.router)
     application.include_router(ai.router)
 
     return application

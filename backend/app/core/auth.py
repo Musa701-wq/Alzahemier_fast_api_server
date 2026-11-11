@@ -4,12 +4,15 @@ import hmac
 import json
 from typing import Dict, Optional
 from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from backend.app.core.config import settings
 from backend.app.db.repository import db
 
+bearer_scheme = HTTPBearer(auto_error=False)
 
-def create_access_token(user_id: str, role: str = "user") -> str:
-    payload = {"sub": user_id, "role": role}
+
+def create_access_token(user_id: str, role: str = "caregiver") -> str:
+    payload = {"sub": user_id, "role": "caregiver"}
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     b64_payload = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
     sig = hmac.new(
@@ -49,13 +52,21 @@ def decode_access_token(token: str) -> Dict[str, str]:
     return data
 
 
-def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dict:
-    if not authorization or not authorization.lower().startswith("bearer "):
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    authorization: Optional[str] = Header(default=None, include_in_schema=False),
+) -> Dict:
+    token: Optional[str] = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials.strip()
+    elif authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid Bearer token.",
         )
-    token = authorization.split(" ", 1)[1].strip()
     claims = decode_access_token(token)
     user_id = claims.get("sub")
     if not user_id:
@@ -70,13 +81,3 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dic
             detail="User profile not found.",
         )
     return profile
-
-
-def require_admin(current_user: Dict = Depends(get_current_user)) -> Dict:
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Administrator privileges are required for this action.",
-        )
-    return current_user
-

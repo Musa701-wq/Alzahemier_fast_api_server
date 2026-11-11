@@ -10,8 +10,7 @@ class SignupRequest(BaseModel):
     email: str = Field(..., min_length=3)
     password: str = Field(..., min_length=6)
     full_name: str = Field(..., min_length=1)
-    language: Literal["ur", "en"] = "ur"
-    role: Literal["user", "admin"] = "user"
+    language: Literal["ur", "en"] = "en"
 
 
 class LoginRequest(BaseModel):
@@ -24,7 +23,7 @@ class ProfileResponse(BaseModel):
     email: str
     full_name: str
     language: Literal["ur", "en"]
-    role: Literal["user", "admin"]
+    role: Literal["caregiver"] = "caregiver"
     push_token: Optional[str] = None
     created_at: str
 
@@ -43,6 +42,13 @@ class PersonCreate(BaseModel):
     age: int = Field(..., gt=0, lt=130)
     gender: str = Field(..., min_length=1)
     city: str = Field(..., min_length=1)
+    education_level: str = "secondary"
+    occupation: str = "retired"
+    living_situation: str = "with_family"
+    family_history_dementia: bool = False
+    medical_conditions: List[str] = []
+    observed_symptoms: List[str] = []
+    symptom_duration_months: int = Field(default=6, ge=0, le=600)
 
 
 class PersonUpdate(BaseModel):
@@ -50,6 +56,13 @@ class PersonUpdate(BaseModel):
     age: Optional[int] = Field(default=None, gt=0, lt=130)
     gender: Optional[str] = None
     city: Optional[str] = None
+    education_level: Optional[str] = None
+    occupation: Optional[str] = None
+    living_situation: Optional[str] = None
+    family_history_dementia: Optional[bool] = None
+    medical_conditions: Optional[List[str]] = None
+    observed_symptoms: Optional[List[str]] = None
+    symptom_duration_months: Optional[int] = Field(default=None, ge=0, le=600)
 
 
 class PersonResponse(BaseModel):
@@ -59,6 +72,13 @@ class PersonResponse(BaseModel):
     age: int
     gender: str
     city: str
+    education_level: str = "secondary"
+    occupation: str = "retired"
+    living_situation: str = "with_family"
+    family_history_dementia: bool = False
+    medical_conditions: List[str] = []
+    observed_symptoms: List[str] = []
+    symptom_duration_months: int = 6
     created_at: str
 
 
@@ -83,6 +103,7 @@ class ConsentResponse(BaseModel):
 # ============================================================================
 class SessionStartRequest(BaseModel):
     person_id: str
+    session_mode: Literal["baseline", "post_visit_adaptive"] = "baseline"
 
 
 class ClockChecklist(BaseModel):
@@ -158,6 +179,10 @@ class SessionResponse(BaseModel):
     id: str
     person_id: str
     session_date: str
+    session_mode: str = "baseline"
+    baseline_session_id: Optional[str] = None
+    adaptive_context: Optional[Dict[str, Any]] = None
+    domain_deltas: Optional[Dict[str, float]] = None
     item_bank_version: int
     item_prompts: Optional[Dict[str, Any]] = None
     total_score: Optional[float] = None

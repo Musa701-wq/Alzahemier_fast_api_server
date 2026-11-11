@@ -1,12 +1,11 @@
-from datetime import datetime
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Yaadasht API"
-    VERSION: str = "2.0.0"
-    DESCRIPTION: str = "Home cognitive screening, doctor directory, and post-visit care continuity backend."
+    VERSION: str = "2.1.0"
+    DESCRIPTION: str = "Personalized & adaptive cognitive screening, doctor directory, and post-visit care continuity backend."
     DEBUG: bool = True
     HOST: str = "127.0.0.1"
     PORT: int = 8000
@@ -17,6 +16,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "*",
     ]
+
+    # MongoDB Configuration
+    MONGODB_URI: str = "mongodb://127.0.0.1:27017"
+    MONGODB_DB_NAME: str = "yaadasht_db"
 
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""

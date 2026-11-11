@@ -1,49 +1,86 @@
-const TEST_METADATA = {
-  1: {
-    domain: "Test 1 of 7 · Orientation Domain",
-    title: "1. Orientation (Time & Place Assessment)",
-    instruction: "Please answer the 5 questions below about today's day, date, month, season, and your city.",
-    speech_prompt: "Please tell me: What day of the week is today, what is today's date, what month is it, what season is it, and which city are you in right now? You can answer verbally or type your answers.",
-  },
-  2: {
-    domain: "Test 2 of 7 · Immediate Memory Domain",
-    title: "2. Immediate Word Recall (Repeat 5 Words)",
-    instruction: "Listen carefully as the voice examiner reads 5 words, then speak them back into the microphone in any order.",
-    speech_prompt: "Listen carefully to these five words: River, Mango, Window, Lantern, Carpet. Please repeat them back into the microphone in any order.",
-  },
-  3: {
-    domain: "Test 3 of 7 · Verbal Fluency Domain",
-    title: "3. Animal Naming (60 Seconds Verbal Fluency)",
-    instruction: "You have 60 seconds to name as many different animals as possible aloud into the microphone.",
-    speech_prompt: "You have 60 seconds to name as many different animals as you can. Press start and begin speaking animal names aloud.",
-  },
-  4: {
-    domain: "Test 4 of 7 · Language & Visual Description Domain",
-    title: "4. Picture Story (Describe the Scene Aloud)",
-    instruction: "Look at the courtyard scene illustration and describe everything you see happening into the microphone.",
-    speech_prompt: "Look at this courtyard scene. Please describe everything you see happening in this picture into your microphone.",
-  },
-  5: {
-    domain: "Test 5 of 7 · Planning & Spatial Domain",
-    title: "5. Clock Drawing (Set Time to 11:10)",
-    instruction: "Draw a circular clock face on the canvas with all 12 numbers and draw the hands showing 11:10.",
-    speech_prompt: "Draw a clock face on the canvas with all twelve numbers, and set the hands to show 11:10.",
-  },
-  6: {
-    domain: "Test 6 of 7 · Attention & Processing Speed Domain",
-    title: "6. Dot Connecting (1 to 12 Numbers)",
-    instruction: "Tap the numbered circles in order from 1 up to 12 as quickly and smoothly as possible.",
-    speech_prompt: "Tap the numbered circles in order from 1 up to 12 as quickly and smoothly as you can.",
-  },
-  7: {
-    domain: "Test 7 of 7 · Delayed Memory Domain",
-    title: "7. Delayed Word Recall (Recall Earlier 5 Words)",
-    instruction: "Without looking back at previous cards, speak the 5 words that were presented in Test 2.",
-    speech_prompt: "Now, without looking back, what were the five words you learned earlier in the test? Please speak them aloud into the microphone.",
-  },
-};
+let activeSessionPrompts = {};
+
+export function setActiveSessionPrompts(prompts = {}) {
+  activeSessionPrompts = prompts || {};
+}
+
+function getDynamicTestMetadata(stepNum, prompts = activeSessionPrompts) {
+  const p = prompts || {};
+  const oq = p.orientation_questions || {};
+  const words = Array.isArray(p.words_en) && p.words_en.length === 5
+    ? p.words_en.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    : ["Garden", "Kettle", "Mirror", "Bangle", "Pillow"];
+  const fluencyCat = p.fluency_category || "Animals";
+  const fluencyPrompt =
+    p.fluency_prompt ||
+    `You have 60 seconds to name as many different items in "${fluencyCat}" as possible aloud into the microphone.`;
+  const sceneTitle = p.picture_scene_title || "Courtyard Tea Scene";
+  const storyPrompt =
+    p.picture_story_prompt ||
+    "Look closely at the scene illustration and describe everything you see happening into the microphone.";
+  const clockTime = p.clock_target_time || "11:10";
+
+  const metaMap = {
+    1: {
+      domain: "Test 1 of 7 · Orientation Domain (AI-Tailored)",
+      title: "1. Orientation (Time & Place Assessment)",
+      instruction:
+        oq.instruction ||
+        "Please answer the 5 orientation questions below about today's day, date, month, season, and your city.",
+      speech_prompt: `${oq.day || "What day of the week is today?"} ${oq.date || "What is today's date?"} ${oq.month || "What month is it?"} ${oq.season || "What season is it?"} ${oq.city || "Which city are you in right now?"}`,
+    },
+    2: {
+      domain: "Test 2 of 7 · Immediate Memory Domain (AI Non-Repeating Words)",
+      title: `2. Immediate Word Recall (${words.join(" · ")})`,
+      instruction: `Listen carefully as the voice examiner reads your 5 personalized words (${words.join(", ")}), then repeat them back in any order.`,
+      speech_prompt: `Listen carefully to these five words: ${words.join(", ")}. Please repeat them back into the microphone in any order.`,
+    },
+    3: {
+      domain: "Test 3 of 7 · Verbal Fluency Domain (AI Category)",
+      title: `3. 60-Second Verbal Fluency (${fluencyCat})`,
+      instruction: fluencyPrompt,
+      speech_prompt: fluencyPrompt,
+    },
+    4: {
+      domain: "Test 4 of 7 · Language & Visual Description Domain",
+      title: `4. Picture Story (${sceneTitle})`,
+      instruction: storyPrompt,
+      speech_prompt: storyPrompt,
+    },
+    5: {
+      domain: "Test 5 of 7 · Planning & Spatial Domain (Dynamic Target)",
+      title: `5. Clock Drawing (Set Hands to ${clockTime})`,
+      instruction: `Draw a circular clock face on the canvas with all 12 numbers and set the two hands to show ${clockTime}.`,
+      speech_prompt: `Draw a clock face on the canvas with all twelve numbers, and set the hands to show ${clockTime}.`,
+    },
+    6: {
+      domain: "Test 6 of 7 · Attention & Processing Speed Domain (Randomized Trail)",
+      title: "6. Trail Making (Connect Dots 1 to 12 in Order)",
+      instruction:
+        p.test6_instruction ||
+        "Tap the randomized numbered circles in sequential order from 1 up to 12 as quickly and accurately as possible.",
+      speech_prompt:
+        p.test6_instruction ||
+        "Tap the numbered circles in order from 1 up to 12 as quickly and smoothly as you can.",
+    },
+    7: {
+      domain: "Test 7 of 7 · Delayed Memory Domain",
+      title: "7. Delayed Word Recall (Recall Your Earlier 5 Words)",
+      instruction:
+        p.test7_instruction ||
+        "Without looking back at Test 2, speak or type the 5 words that were presented to you earlier in this session.",
+      speech_prompt:
+        p.test7_instruction ||
+        "Now, without looking back, what were the five words you learned earlier in this session? Please speak them aloud into the microphone.",
+    },
+  };
+  return metaMap[stepNum] || metaMap[1];
+}
 
 export function switchSection(sectionId) {
+  try {
+    localStorage.setItem("yaadasht_active_section", sectionId);
+  } catch {}
   document.querySelectorAll(".page-section").forEach((sec) => {
     sec.classList.toggle("active", sec.dataset.page === sectionId);
   });
@@ -55,8 +92,14 @@ export function switchSection(sectionId) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-export function renderActiveTestStep(stepNum) {
-  const meta = TEST_METADATA[stepNum] || TEST_METADATA[1];
+export function renderActiveTestStep(stepNum, customPrompts = null) {
+  if (customPrompts) {
+    activeSessionPrompts = customPrompts;
+  }
+  try {
+    localStorage.setItem("yaadasht_active_step", String(stepNum));
+  } catch {}
+  const meta = getDynamicTestMetadata(stepNum, activeSessionPrompts);
   const domEl = document.getElementById("currentTestDomainTag");
   const titleEl = document.getElementById("currentTestTitle");
   const instEl = document.getElementById("currentTestInstruction");
@@ -65,7 +108,7 @@ export function renderActiveTestStep(stepNum) {
   if (domEl) domEl.textContent = meta.domain;
   if (titleEl) titleEl.textContent = meta.title;
   if (instEl) instEl.textContent = meta.instruction;
-  if (subEl) subEl.textContent = `Test ${stepNum} of 7 · Voice examiner ready for verbal response`;
+  if (subEl) subEl.textContent = `Test ${stepNum} of 7 · Dynamic AI session ready for verbal response`;
 
   for (let i = 1; i <= 7; i++) {
     const pane = document.getElementById(`testPane${i}`);
@@ -91,16 +134,129 @@ export function renderActiveTestStep(stepNum) {
   }
 }
 
-export function speakInstruction(stepNum, customText = null) {
+let repeatTimeoutId = null;
+let currentRepeatPass = 0;
+let isSpeechPaused = false;
+let isSpeechActive = false;
+
+function updateQuestionPlayerUI(state, passNum = 0, maxPasses = 2) {
+  const playBtn = document.getElementById("btnPlayQuestion");
+  const pauseBtn = document.getElementById("btnPauseQuestion");
+  const stopBtn = document.getElementById("btnStopQuestion");
+  const badge = document.getElementById("questionRepeatBadge");
+
+  if (state === "speaking") {
+    if (playBtn) playBtn.textContent = `🔊 Playing (${passNum}/${maxPasses})...`;
+    if (pauseBtn) {
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = "⏸ Pause";
+    }
+    if (stopBtn) stopBtn.disabled = false;
+    if (badge) badge.textContent = `Repeat: ${passNum} / ${maxPasses}`;
+  } else if (state === "paused") {
+    if (playBtn) playBtn.textContent = `⏸ Paused (${passNum}/${maxPasses})`;
+    if (pauseBtn) {
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = "▶ Resume";
+    }
+    if (stopBtn) stopBtn.disabled = false;
+    if (badge) badge.textContent = `Paused (${passNum}/${maxPasses})`;
+  } else if (state === "done") {
+    if (playBtn) playBtn.textContent = "▶ Play Question";
+    if (pauseBtn) {
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "⏸ Pause";
+    }
+    if (stopBtn) stopBtn.disabled = true;
+    if (badge) badge.textContent = `Done: ${maxPasses} / ${maxPasses} ✓`;
+  } else {
+    if (playBtn) playBtn.textContent = "▶ Play Question";
+    if (pauseBtn) {
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "⏸ Pause";
+    }
+    if (stopBtn) stopBtn.disabled = true;
+    if (badge) badge.textContent = `Repeat: 0 / ${maxPasses}`;
+  }
+}
+
+export function stopQuestionAudio() {
+  if (repeatTimeoutId) {
+    clearTimeout(repeatTimeoutId);
+    repeatTimeoutId = null;
+  }
+  isSpeechPaused = false;
+  isSpeechActive = false;
+  currentRepeatPass = 0;
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  updateQuestionPlayerUI("idle", 0, 2);
+}
+
+export function pauseOrResumeQuestion() {
+  if (!("speechSynthesis" in window) || !isSpeechActive) return;
+  if (!isSpeechPaused) {
+    window.speechSynthesis.pause();
+    isSpeechPaused = true;
+    updateQuestionPlayerUI("paused", currentRepeatPass, 2);
+  } else {
+    window.speechSynthesis.resume();
+    isSpeechPaused = false;
+    updateQuestionPlayerUI("speaking", currentRepeatPass, 2);
+  }
+}
+
+/**
+ * Speaks the current question aloud up to maxRepeats (default 2 times) and then automatically stops.
+ */
+export function speakInstruction(stepNum, customText = null, maxRepeats = 2) {
   if (!("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const meta = TEST_METADATA[stepNum] || TEST_METADATA[1];
+  stopQuestionAudio();
+
+  const meta = getDynamicTestMetadata(stepNum, activeSessionPrompts);
   const text = customText || meta.speech_prompt || meta.instruction;
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "en-US";
-  utter.rate = 0.95;
-  utter.pitch = 1.0;
-  window.speechSynthesis.speak(utter);
+  if (!text) return;
+
+  isSpeechActive = true;
+  isSpeechPaused = false;
+
+  const speakPass = (passNumber) => {
+    if (!isSpeechActive) return;
+    currentRepeatPass = passNumber;
+    updateQuestionPlayerUI("speaking", passNumber, maxRepeats);
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.93;
+    utter.pitch = 1.0;
+
+    utter.onend = () => {
+      if (!isSpeechActive) return;
+      if (passNumber < maxRepeats) {
+        repeatTimeoutId = setTimeout(() => {
+          if (isSpeechActive) {
+            speakPass(passNumber + 1);
+          }
+        }, 1200);
+      } else {
+        isSpeechActive = false;
+        isSpeechPaused = false;
+        updateQuestionPlayerUI("done", maxRepeats, maxRepeats);
+      }
+    };
+
+    utter.onerror = () => {
+      if (passNumber >= maxRepeats) {
+        isSpeechActive = false;
+        updateQuestionPlayerUI("idle", 0, maxRepeats);
+      }
+    };
+
+    window.speechSynthesis.speak(utter);
+  };
+
+  speakPass(1);
 }
 
 export function showEmergencyBanner(safetyData) {
@@ -167,16 +323,23 @@ export function renderCompletedSessionResult(session, allSessions = []) {
   }
 
   const dom = session.domain_scores || {};
+  const deltas = session.domain_deltas || {};
+  const fmtDom = (key) => {
+    if (dom[key] === undefined) return "—";
+    const d = deltas[key];
+    const deltaStr = d !== undefined && d !== null ? ` (${d >= 0 ? "+" : ""}${d} vs last)` : "";
+    return `${dom[key]} / 100${deltaStr}`;
+  };
   const domOrientation = document.getElementById("domOrientation");
-  if (domOrientation) domOrientation.textContent = dom.orientation !== undefined ? `${dom.orientation} / 100` : "—";
+  if (domOrientation) domOrientation.textContent = fmtDom("orientation");
   const domMemory = document.getElementById("domMemory");
-  if (domMemory) domMemory.textContent = dom.memory !== undefined ? `${dom.memory} / 100` : "—";
+  if (domMemory) domMemory.textContent = fmtDom("memory");
   const domLanguage = document.getElementById("domLanguage");
-  if (domLanguage) domLanguage.textContent = dom.language !== undefined ? `${dom.language} / 100` : "—";
+  if (domLanguage) domLanguage.textContent = fmtDom("language");
   const domPlanning = document.getElementById("domPlanning");
-  if (domPlanning) domPlanning.textContent = dom.planning !== undefined ? `${dom.planning} / 100` : "—";
+  if (domPlanning) domPlanning.textContent = fmtDom("planning");
   const domAttention = document.getElementById("domAttention");
-  if (domAttention) domAttention.textContent = dom.attention !== undefined ? `${dom.attention} / 100` : "—";
+  if (domAttention) domAttention.textContent = fmtDom("attention");
 
   const perTestEl = document.getElementById("resPerTestList");
   if (perTestEl && session.results) {
@@ -222,8 +385,8 @@ export function renderDoctorsList(doctors, onShareWithDoctor = null) {
   if (!doctors || doctors.length === 0) {
     container.innerHTML = `
       <div class="finding-card" style="grid-column: 1 / -1;">
-        <strong>No verified doctor listings match the current filter</strong>
-        <span>Click "+ Add Verified Clinic Listing (Admin)" above to add a verified clinic record.</span>
+        <strong>No doctor listings match the current filter</strong>
+        <span>Try clearing or changing the city, specialty, or consultation mode filter above.</span>
       </div>
     `;
     return;
@@ -272,6 +435,10 @@ export function renderConfirmedMedicines(medicines, onLogDose) {
   if (!container) return;
 
   const activeMeds = (medicines || []).filter((m) => m.active);
+  const kpiMedCount = document.getElementById("kpiMedicineCount");
+  if (kpiMedCount) {
+    kpiMedCount.textContent = `${activeMeds.length} Active`;
+  }
   if (homeMedEl && activeMeds.length > 0) {
     homeMedEl.textContent = activeMeds
       .map((m) => `${m.name} (${m.dose}) at ${(m.reminder_times || []).join(", ")}`)

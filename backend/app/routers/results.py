@@ -56,6 +56,7 @@ def submit_test_result(
 
     transcript = transcriber.transcribe(fallback_text=payload.raw_response)
     version = session.get("item_bank_version", 1)
+    custom_prompts = session.get("item_prompts")
 
     if payload.test_number == 1:
         norm_score, raw_pts, max_pts, markers = score_orientation(
@@ -67,16 +68,19 @@ def submit_test_result(
         norm_score, raw_pts, max_pts, markers = score_word_recall(
             transcript=transcript,
             item_bank_version=version,
+            custom_prompts=custom_prompts,
         )
     elif payload.test_number == 3:
         norm_score, raw_pts, max_pts, markers = score_animal_naming(
             transcript=transcript,
+            custom_prompts=custom_prompts,
         )
     elif payload.test_number == 4:
         norm_score, raw_pts, max_pts, markers = score_picture_story(
             transcript=transcript,
             item_bank_version=version,
             timing=payload.timing,
+            custom_prompts=custom_prompts,
         )
     elif payload.test_number == 5:
         norm_score, raw_pts, max_pts, markers = score_clock_drawing(
@@ -90,6 +94,7 @@ def submit_test_result(
         norm_score, raw_pts, max_pts, markers = score_word_recall(
             transcript=transcript,
             item_bank_version=version,
+            custom_prompts=custom_prompts,
         )
     else:
         raise HTTPException(

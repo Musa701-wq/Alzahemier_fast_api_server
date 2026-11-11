@@ -185,10 +185,10 @@
 .main-container {
   flex: 1;
   width: 100%;
-  padding: 44px 5vw 64px;
+  padding: 26px 5vw 56px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .page-section {

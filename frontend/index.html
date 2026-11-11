@@ -8,12 +8,56 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/base.css" />
-  <link rel="stylesheet" href="/assets/css/layout.css" />
-  <link rel="stylesheet" href="/assets/css/components.css" />
+  <link rel="stylesheet" href="/assets/css/base.css?v=7" />
+  <link rel="stylesheet" href="/assets/css/layout.css?v=7" />
+  <link rel="stylesheet" href="/assets/css/components.css?v=7" />
 </head>
 <body>
   <div class="page-wrapper">
+    <!-- =========================================================
+         AI TEST GENERATION LOADING OVERLAY (CONCISE DIALOG)
+         ========================================================= -->
+    <div class="ai-loading-overlay hidden" id="aiLoadingOverlay" aria-live="polite">
+      <div class="ai-loading-modal">
+        <div class="ai-loading-spinner"></div>
+        <span class="verified-pill" id="aiLoadingBadge">AI Assessment Engine</span>
+        <h3 id="aiLoadingTitle">Generating Personalized Test...</h3>
+        <p id="aiLoadingStepText">Creating 7 non-repeating cognitive questions for this profile.</p>
+        <div class="ai-loading-steps-list">
+          <div class="ai-loading-step-item active" id="aiLoadStep1">✓ Profile synced with MongoDB</div>
+          <div class="ai-loading-step-item active" id="aiLoadStep2">⏳ Generating AI voice &amp; recall prompts</div>
+          <div class="ai-loading-step-item" id="aiLoadStep3">⏳ Preparing clock &amp; trail canvas</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         CLEAN ACCOUNT LOGIN / SIGNUP DIALOG MODAL
+         ========================================================= -->
+    <div class="ai-loading-overlay hidden" id="authModalBackdrop" role="dialog" aria-modal="true">
+      <div class="ai-loading-modal" style="max-width:400px;text-align:left;padding:24px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div>
+            <span class="card-step-tag">Caregiver Account</span>
+            <h3 style="margin:2px 0 0;font-size:19px;" id="authModalTitle">Sign In / Register</h3>
+          </div>
+          <button type="button" class="mode-pill" id="btnCloseAuthModal">&times;</button>
+        </div>
+        <div class="form-field" style="margin-bottom:10px;">
+          <label for="inpAuthEmail">Email Address</label>
+          <input type="email" id="inpAuthEmail" placeholder="name@example.com" />
+        </div>
+        <div class="form-field" style="margin-bottom:14px;">
+          <label for="inpAuthPassword">Password</label>
+          <input type="password" id="inpAuthPassword" placeholder="Minimum 6 characters" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <button type="button" class="btn-run-full" id="btnSubmitLogin" style="margin-top:0;padding:11px;">Sign In</button>
+          <button type="button" class="btn-outline-green" id="btnSubmitSignup" style="justify-content:center;padding:11px;border-radius:12px;">Create Account</button>
+        </div>
+      </div>
+    </div>
+
     <!-- =========================================================
          EMERGENCY SAFETY BANNER (HIDDEN UNLESS TRIGGERED)
          ========================================================= -->
@@ -67,16 +111,19 @@
           </button>
         </nav>
 
-        <!-- Zone 3: Voice Assistant Status & Active Profile Badge -->
+        <!-- Zone 3: Voice Assistant Status, Active Profile Badge & Logout -->
         <div class="appbar__right">
           <button type="button" class="voice-mode-pill" id="btnToggleSpeechOutput" title="Toggle Voice Examiner Audio Prompts">
             <span class="voice-dot"></span>
-            <span id="voiceGuideStatusText">🔊 Voice Examiner: Active</span>
+            <span id="voiceGuideStatusText">🔊 Voice: On</span>
           </button>
-          <div class="appbar__status">
+          <button type="button" class="appbar__status" id="btnOpenAuthModal" style="cursor:pointer;border:none;" title="Sign In or Switch Account">
             <span class="appbar__status-dot"></span>
-            <span id="activePersonBadge">Guest Mode</span>
-          </div>
+            <span id="activePersonBadge">Sign In</span>
+          </button>
+          <button type="button" class="voice-mode-pill hidden" id="btnHeaderLogout" title="Logout from current profile" style="border-color:rgba(248,113,113,0.45);background:rgba(239,68,68,0.16);color:#fecaca;">
+            <span>🚪 Logout</span>
+          </button>
         </div>
       </div>
     </header>
@@ -87,58 +134,222 @@
     <main class="main-container">
 
       <!-- =======================================================
-           SECTION 1: HOME, ONBOARDING & TODAY'S CARE PLAN
+           SECTION 1: HOME (GUEST SETUP vs LOGGED-IN CAREGIVER HUB)
            ======================================================= -->
       <section class="page-section active" id="section-home" data-page="home">
-        <div class="hero-full">
+
+        <!-- =====================================================
+             VIEW A: LOGGED-IN CAREGIVER COMMAND HUB (FULL WIDTH)
+             ===================================================== -->
+        <div class="logged-in-home hidden" id="homeLoggedInView">
+          <!-- Welcome Header Banner -->
+          <div class="scanner-card logged-hero-banner">
+            <div class="logged-hero-banner__left">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <span class="verified-pill">Active Patient Profile ✓</span>
+                <span class="card-step-tag" id="dashAccountEmailTag">Synced with MongoDB</span>
+              </div>
+              <h2 id="dashPatientNameHeading" style="font-size:26px;font-weight:800;margin:0 0 6px;color:var(--text-dark);">Patient Care Hub</h2>
+              <div class="logged-meta-pills">
+                <span class="dash-tag-chip" id="dashAgeGender">—</span>
+                <span class="dash-tag-chip" id="dashCity">—</span>
+                <span class="dash-tag-chip" id="dashEducation">—</span>
+                <span class="dash-tag-chip" id="dashOccupation">—</span>
+              </div>
+              <div class="dash-tags-row" id="dashSymptomsTags" style="margin-top:8px;"></div>
+            </div>
+
+            <div class="logged-hero-banner__actions">
+              <button type="button" class="btn-glow-green" id="btnDashStartBaseline">
+                <span>🧠 Start AI Test</span>
+              </button>
+              <button type="button" class="btn-outline-green" id="btnDashStartAdaptive">
+                <span>🔄 Adaptive Follow-Up</span>
+              </button>
+              <button type="button" class="mode-pill" id="btnEditPatientProfile">✏️ Edit Profile</button>
+              <button type="button" class="mode-pill" id="btnLogoutProfile" style="border-color:#fca5a5;color:#dc2626;background:#fef2f2;" title="Sign Out of Current Profile">🚪 Logout</button>
+            </div>
+          </div>
+
+          <!-- 4 Crisp KPI Cards -->
+          <div class="logged-kpi-grid">
+            <div class="scanner-card logged-kpi-card">
+              <span class="card-step-tag">Latest Score</span>
+              <strong class="logged-kpi-val" id="kpiLatestScore">—</strong>
+              <span class="logged-kpi-sub" id="homeLastOutcomeText">No test completed yet</span>
+            </div>
+            <div class="scanner-card logged-kpi-card">
+              <span class="card-step-tag">Sessions</span>
+              <strong class="logged-kpi-val" id="dashSessionCountBadge">0 Sessions</strong>
+              <span class="logged-kpi-sub">Saved in MongoDB</span>
+            </div>
+            <div class="scanner-card logged-kpi-card">
+              <span class="card-step-tag">Next Retest</span>
+              <strong class="logged-kpi-val" id="kpiNextRetestBadge">Due Now</strong>
+              <span class="logged-kpi-sub" id="homeNextRetestText">15-min voice check</span>
+            </div>
+            <div class="scanner-card logged-kpi-card">
+              <span class="card-step-tag">Daily Medicines</span>
+              <strong class="logged-kpi-val" id="kpiMedicineCount">0 Active</strong>
+              <span class="logged-kpi-sub" id="homeMedicineQuickText">Manage in Post-Visit</span>
+            </div>
+          </div>
+
+          <!-- 2-Column Workspace: Recent Sessions + Quick Care Shortcuts -->
+          <div class="logged-workspace-grid">
+            <div class="scanner-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h3 style="margin:0;font-size:17px;">📋 Recent Screening Sessions</h3>
+                <span class="verified-pill">AI Dynamic Prompts</span>
+              </div>
+              <div class="dash-sessions-list" id="dashSessionsList">
+                <div class="finding-card" style="background:var(--bg-soft);">
+                  <strong>No sessions yet</strong>
+                  <span>Click "Start AI Test" above to begin.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="scanner-card">
+              <h3 style="margin:0 0 12px;font-size:17px;">⚡ Quick Care Shortcuts</h3>
+              <div class="logged-shortcuts-stack">
+                <button type="button" class="logged-shortcut-btn" data-nav-target="result">
+                  <span class="logged-shortcut-icon">📄</span>
+                  <div>
+                    <strong>Result &amp; 1-Page PDF Report</strong>
+                    <span>Download or share via WhatsApp</span>
+                  </div>
+                </button>
+                <button type="button" class="logged-shortcut-btn" data-nav-target="doctors">
+                  <span class="logged-shortcut-icon">🩺</span>
+                  <div>
+                    <strong>Find Specialist Doctor</strong>
+                    <span>Neurologists &amp; geriatricians in your city</span>
+                  </div>
+                </button>
+                <button type="button" class="logged-shortcut-btn" data-nav-target="postvisit">
+                  <span class="logged-shortcut-icon">💊</span>
+                  <div>
+                    <strong>Prescriptions &amp; Daily Reminders</strong>
+                    <span>Upload doctor notes &amp; track doses</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- =====================================================
+             VIEW B: PUBLIC / NEW PATIENT SETUP VIEW (CONCISE)
+             ===================================================== -->
+        <div class="hero-full" id="homeGuestView">
           <div class="hero-full__left anim-item anim-d1">
             <div class="eyebrow-pill">
               <span class="pulse-dot"></span>
-              <span>Screening Aid Only · Not a Medical Diagnosis</span>
+              <span>AI Cognitive Screening · Not a Diagnosis</span>
             </div>
 
             <h1 class="hero-display">
-              15-Minute Home <span class="text-gradient">Memory &amp; Cognitive Check</span>
+              15-Minute <span class="text-gradient">Memory &amp; Cognitive Check</span>
             </h1>
 
             <p class="hero-lead">
-              Take 7 guided cognitive tests at home with full verbal voice interaction. Speak your answers naturally, receive a plain-language outcome, track longitudinal score trends, find a specialist doctor in your city, and manage post-visit medicine reminders.
+              7 voice-guided cognitive tests tailored to your profile, with an instant clinical PDF report and specialist care tracking.
             </p>
 
             <div class="hero-cta-row">
               <button type="button" class="btn-glow-green" id="btnQuickStartSession">
-                <span>Start 7 Guided Tests (15 Min)</span>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+                <span>Start 7 Guided Tests</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
                   <line x1="5" y1="12" x2="19" y2="12" />
                   <polyline points="12 5 19 12 12 19" />
                 </svg>
               </button>
 
               <button type="button" class="btn-outline-green" data-nav-target="doctors">
-                <span>Find a Specialist Doctor</span>
+                <span>Find Doctors</span>
               </button>
+            </div>
+
+            <!-- Compact 5 Domains & 3 Steps -->
+            <div class="hero-clinical-showcase">
+              <div class="hero-domains-card">
+                <div class="hero-domains-card__header">
+                  <span class="hero-domains-card__title">5 Evaluated Domains</span>
+                  <span class="hero-domains-card__badge">Validated Battery</span>
+                </div>
+                <div class="hero-domains-pills">
+                  <div class="domain-mini-chip"><strong>30%</strong><span>Memory Recall</span></div>
+                  <div class="domain-mini-chip"><strong>20%</strong><span>Verbal Fluency</span></div>
+                  <div class="domain-mini-chip"><strong>20%</strong><span>Clock Vision</span></div>
+                  <div class="domain-mini-chip"><strong>15%</strong><span>Orientation</span></div>
+                  <div class="domain-mini-chip"><strong>15%</strong><span>Trail Making</span></div>
+                </div>
+              </div>
+
+              <div class="hero-journey-steps">
+                <div class="journey-step-item">
+                  <div class="journey-step-num">01</div>
+                  <div>
+                    <h4>AI Voice Screening</h4>
+                    <p>Tailored questions based on age, education, and symptoms.</p>
+                  </div>
+                </div>
+                <div class="journey-step-item">
+                  <div class="journey-step-num">02</div>
+                  <div>
+                    <h4>1-Page Clinical PDF</h4>
+                    <p>Instant outcome summary ready for your doctor.</p>
+                  </div>
+                </div>
+                <div class="journey-step-item">
+                  <div class="journey-step-num">03</div>
+                  <div>
+                    <h4>Post-Visit Care</h4>
+                    <p>Prescription extraction, dose reminders &amp; follow-ups.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Right Column: Patient Profile & Consent Setup Card -->
+          <!-- Right Column: Clean, Concise Intake Card + Existing Email Login -->
           <div class="hero-full__right anim-item anim-d2">
-            <div class="scanner-card onboarding-card">
+            <div class="scanner-card onboarding-card" id="onboardingFormCard">
+              <!-- Quick Email Login for Returning Users -->
+              <div id="returningUserLoginBox" style="background:var(--bg-soft);border:1px solid var(--green-border);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
+                <span class="card-step-tag" style="display:block;margin-bottom:4px;">Already Registered in Database?</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <input type="email" id="inpQuickLoginEmail" placeholder="Enter your email to login &amp; load saved tests..." style="flex:1;padding:9px 12px;border-radius:10px;border:1px solid var(--border-subtle);font-size:13.5px;" />
+                  <button type="button" class="btn-upload-main" id="btnQuickEmailLogin" style="padding:9px 18px;white-space:nowrap;">
+                    Login &rarr;
+                  </button>
+                </div>
+              </div>
+
               <div class="scanner-card__head">
                 <div>
-                  <span class="card-step-tag">Stage 1 · Onboarding &amp; Consent</span>
-                  <h3>Person Being Tested &amp; Consent</h3>
+                  <span class="card-step-tag">New Patient Setup</span>
+                  <h3>Patient Profile</h3>
                 </div>
-                <span class="verified-pill" id="onboardStatusBadge">Required</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <span class="verified-pill" id="onboardStatusBadge">AI Personalized</span>
+                  <button type="button" class="mode-pill hidden" id="btnCancelEditProfile">Cancel</button>
+                </div>
               </div>
 
               <div class="form-grid-2">
-                <div class="form-field">
-                  <label for="inpPersonName">Patient / Person Name</label>
-                  <input type="text" id="inpPersonName" value="Abdul Sattar" placeholder="Full Name" />
+                <div class="form-field" style="grid-column: 1 / -1;">
+                  <label for="inpPersonEmail">Email Address (To Save Profile &amp; Test History)</label>
+                  <input type="email" id="inpPersonEmail" value="" placeholder="e.g. patient@example.com" />
                 </div>
                 <div class="form-field">
-                  <label for="inpPersonAge">Age (Years)</label>
-                  <input type="number" id="inpPersonAge" value="68" min="18" max="120" />
+                  <label for="inpPersonName">Full Name</label>
+                  <input type="text" id="inpPersonName" value="" placeholder="Patient name" />
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonAge">Age</label>
+                  <input type="number" id="inpPersonAge" value="" placeholder="e.g. 68" min="18" max="120" />
                 </div>
                 <div class="form-field">
                   <label for="inpPersonGender">Gender</label>
@@ -156,51 +367,70 @@
                     <option value="Islamabad">Islamabad</option>
                     <option value="Rawalpindi">Rawalpindi</option>
                     <option value="Faisalabad">Faisalabad</option>
+                    <option value="Peshawar">Peshawar</option>
+                    <option value="Multan">Multan</option>
+                    <option value="Quetta">Quetta</option>
                   </select>
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonEducation">Education</label>
+                  <select id="inpPersonEducation">
+                    <option value="no_formal">No Formal</option>
+                    <option value="primary">Primary</option>
+                    <option value="secondary" selected>Secondary / Matric</option>
+                    <option value="graduate">Graduate</option>
+                    <option value="postgraduate">Postgraduate</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="inpPersonOccupation">Occupation</label>
+                  <input type="text" id="inpPersonOccupation" value="" placeholder="e.g. Teacher, Retired" />
+                </div>
+                <div class="form-field">
+                  <label for="inpFamilyHistory">Family History</label>
+                  <select id="inpFamilyHistory">
+                    <option value="false">No</option>
+                    <option value="true">Yes</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="inpSymptomDuration">Symptoms (Months)</label>
+                  <input type="number" id="inpSymptomDuration" value="6" min="0" max="240" />
                 </div>
               </div>
 
-              <div class="consent-checklist">
-                <label class="consent-row">
+              <div class="form-field" style="margin-top:6px;">
+                <label>Observed Symptoms:</label>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:12.5px;">
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="repeating_questions" /> <span>Repeating questions</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="forgetting_recent_events" /> <span>Recent memory loss</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="misplacing_items" /> <span>Misplacing items</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="date_time_confusion" /> <span>Date confusion</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="word_finding_difficulty" /> <span>Word difficulty</span></label>
+                </div>
+              </div>
+
+              <div class="form-field" style="margin-top:6px;">
+                <label>Conditions:</label>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:12.5px;">
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="hypertension" /> <span>BP</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="diabetes" /> <span>Diabetes</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="hearing_or_vision" /> <span>Hearing/Vision</span></label>
+                  <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="stroke_history" /> <span>Stroke</span></label>
+                </div>
+              </div>
+
+              <div class="consent-checklist" style="margin-top:8px;">
+                <label class="consent-row" style="padding:6px 10px;">
                   <input type="checkbox" id="chkConsentAudio" checked />
-                  <span>I consent to recording voice responses, drawing strokes, and touch inputs during the 7 tests.</span>
-                </label>
-                <label class="consent-row">
-                  <input type="checkbox" id="chkConsentData" checked />
-                  <span>I understand Yaadasht is a screening aid only (not a medical diagnosis) and consent to data processing &amp; report sharing.</span>
+                  <input type="checkbox" id="chkConsentData" checked class="hidden" />
+                  <span>I consent to voice/drawing capture and understand this is a screening aid only.</span>
                 </label>
               </div>
 
               <button type="button" class="btn-run-full" id="btnSaveProfileAndStart">
-                <span>Save Profile &amp; Begin Guided Session &rarr;</span>
+                <span>Save Profile &amp; Generate AI Test &rarr;</span>
               </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Home Summary Strip: Last Result, Next Retest & Today's Medicines -->
-        <div class="full-features-band anim-item anim-d3">
-          <div class="feature-tile">
-            <div class="feature-tile__icon">✓</div>
-            <div>
-              <h3>Last Screening Outcome</h3>
-              <p id="homeLastOutcomeText">No session completed yet. Take the 7 tests to establish a baseline.</p>
-            </div>
-          </div>
-
-          <div class="feature-tile">
-            <div class="feature-tile__icon">📅</div>
-            <div>
-              <h3>Next Recommended Retest</h3>
-              <p id="homeNextRetestText">Every 3 months before a doctor visit, or monthly after a visit.</p>
-            </div>
-          </div>
-
-          <div class="feature-tile">
-            <div class="feature-tile__icon">💊</div>
-            <div>
-              <h3>Today's Confirmed Medicines</h3>
-              <p id="homeMedicineQuickText">No doctor prescription uploaded yet. Confirm medicines in Post-Visit.</p>
             </div>
           </div>
         </div>
@@ -224,24 +454,35 @@
             </div>
           </div>
 
-          <!-- Active Test Card with Integrated Voice Examiner & Live Speech Recognition -->
+          <!-- Active Test Card with Integrated Question Audio + Voice Recorder & Timer -->
           <div class="scanner-card session-stage-card">
-            <!-- Voice Examiner Header Bar -->
-            <div class="voice-examiner-bar">
+            <!-- Single Compact Audio & Voice Recording Toolbar -->
+            <div class="voice-examiner-bar" id="liveVoiceBubble">
               <div class="voice-examiner-info">
                 <div class="voice-examiner-avatar">🎙️</div>
                 <div class="voice-examiner-text">
-                  <strong id="voiceExaminerTitle">Voice Examiner Ready</strong>
-                  <span id="voiceExaminerSubtitle">Click "Listen to Question" or "Speak Answer" to interact verbally</span>
+                  <strong id="voiceExaminerTitle">Question Audio &amp; Voice Recorder</strong>
+                  <span id="liveVoiceText">Press "▶ Play Question" (2x repeat) or "🎙️ Record Answer" to record &amp; transcribe your voice.</span>
                 </div>
               </div>
-              <div class="voice-examiner-actions">
-                <button type="button" class="btn-examiner-speak" id="btnSpeakPrompt">
-                  🔊 Listen to Question
+
+              <div class="voice-examiner-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <!-- Question Audio Controls (Play 2x / Pause / Stop) -->
+                <button type="button" class="btn-examiner-speak" id="btnPlayQuestion" title="Play current question aloud (repeats 2 times then stops)">
+                  ▶ Play Question
                 </button>
-                <button type="button" class="btn-mic-main" id="btnGlobalMicToggle">
+                <button type="button" class="mode-pill" id="btnPauseQuestion" disabled title="Pause or Resume spoken question">
+                  ⏸ Pause
+                </button>
+                <button type="button" class="mode-pill" id="btnStopQuestion" disabled title="Stop spoken question">
+                  ⏹ Stop
+                </button>
+                <span class="verified-pill" id="questionRepeatBadge">Repeat: 0 / 2</span>
+
+                <!-- User Voice Recorder + Live Waveform + Speaking/Pause Timer + Playback -->
+                <button type="button" class="btn-mic-main" id="btnGlobalMicToggle" title="Record your spoken answer, measure speaking/pause duration &amp; transcribe">
                   <span id="globalMicIcon">🎙️</span>
-                  <span id="globalMicLabel">Speak Answer</span>
+                  <span id="globalMicLabel">Record Answer</span>
                   <div class="voice-wave hidden" id="globalMicWave">
                     <div class="voice-wave-bar"></div>
                     <div class="voice-wave-bar"></div>
@@ -249,62 +490,82 @@
                     <div class="voice-wave-bar"></div>
                   </div>
                 </button>
-                <span class="verified-pill" id="sessionBankBadge">Item Bank v1</span>
+
+                <div class="voice-visualizer-wrap" style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.92);padding:4px 10px;border-radius:10px;">
+                  <canvas id="voiceVisualizerCanvas" width="140" height="28" aria-label="Real-time microphone audio waveform visualizer"></canvas>
+                  <span class="mode-pill" id="voiceLevelBadge" style="font-size:11.5px;min-width:110px;text-align:center;">⏱ 0.0s · Idle</span>
+                </div>
+
+                <button type="button" class="mode-pill hidden" id="btnPlayRecordedVoice" title="Listen to your recorded voice response" style="background:#ffffff;color:var(--green-dark);font-weight:700;">
+                  🔊 Play Recording
+                </button>
               </div>
             </div>
 
-            <!-- Live Speech Recognition Transcript Bubble -->
-            <div class="live-voice-transcript" id="liveVoiceBubble">
-              <span>🎙️ Live Speech:</span>
-              <strong id="liveVoiceText">Microphone idle. Click "Speak Answer" or a field microphone to speak your response.</strong>
-            </div>
-
-            <div class="scanner-card__head" style="margin-top: 4px;">
+            <div class="scanner-card__head" style="margin-top: 8px;">
               <div>
                 <span class="card-step-tag" id="currentTestDomainTag">Test 1 of 7 · Orientation Domain</span>
                 <h3 id="currentTestTitle">1. Orientation (Time &amp; Place Assessment)</h3>
               </div>
+              <button type="button" class="btn-outline-green" id="btnRegenerateAISession" style="padding:8px 16px;font-size:13px;border-radius:12px;">
+                🔄 New Test
+              </button>
             </div>
 
             <p class="test-instruction-banner" id="currentTestInstruction">
               Please answer the 5 questions below about today's day, date, month, season, and your city.
             </p>
 
-            <!-- TEST 1: ORIENTATION (WITH INDIVIDUAL VOICE MIC BUTTONS) -->
+            <!-- TEST 1: ORIENTATION (WITH INDIVIDUAL PLAY 2x & VOICE MIC BUTTONS) -->
             <div class="test-pane" id="testPane1">
               <div class="form-grid-2">
                 <div class="form-field">
-                  <label>1. What day of the week is today?</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+                    <label id="lblT1Day" style="margin-bottom:0;">1. What day of the week is today?</label>
+                    <button type="button" class="mode-pill btn-play-subq" data-subq-label="lblT1Day" style="font-size:11.5px;padding:3px 10px;">▶ Play (2x)</button>
+                  </div>
                   <div class="input-with-mic">
-                    <input type="text" id="t1Day" placeholder="e.g. Monday" />
+                    <input type="text" id="t1Day" placeholder="Speak or type day of week" />
                     <button type="button" class="btn-field-mic" data-voice-field="t1Day" title="Speak day of week">🎙️ Speak</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>2. What is today's date of the month?</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+                    <label id="lblT1Date" style="margin-bottom:0;">2. What is today's date of the month?</label>
+                    <button type="button" class="mode-pill btn-play-subq" data-subq-label="lblT1Date" style="font-size:11.5px;padding:3px 10px;">▶ Play (2x)</button>
+                  </div>
                   <div class="input-with-mic">
-                    <input type="text" id="t1Date" placeholder="e.g. 5" />
+                    <input type="text" id="t1Date" placeholder="Speak or type date number" />
                     <button type="button" class="btn-field-mic" data-voice-field="t1Date" title="Speak date number">🎙️ Speak</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>3. What month is it?</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+                    <label id="lblT1Month" style="margin-bottom:0;">3. What month is it?</label>
+                    <button type="button" class="mode-pill btn-play-subq" data-subq-label="lblT1Month" style="font-size:11.5px;padding:3px 10px;">▶ Play (2x)</button>
+                  </div>
                   <div class="input-with-mic">
-                    <input type="text" id="t1Month" placeholder="e.g. November" />
+                    <input type="text" id="t1Month" placeholder="Speak or type current month" />
                     <button type="button" class="btn-field-mic" data-voice-field="t1Month" title="Speak month">🎙️ Speak</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>4. What season is it right now?</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+                    <label id="lblT1Season" style="margin-bottom:0;">4. What season is it right now?</label>
+                    <button type="button" class="mode-pill btn-play-subq" data-subq-label="lblT1Season" style="font-size:11.5px;padding:3px 10px;">▶ Play (2x)</button>
+                  </div>
                   <div class="input-with-mic">
-                    <input type="text" id="t1Season" placeholder="e.g. Autumn / Winter" />
+                    <input type="text" id="t1Season" placeholder="Speak or type current season" />
                     <button type="button" class="btn-field-mic" data-voice-field="t1Season" title="Speak season">🎙️ Speak</button>
                   </div>
                 </div>
                 <div class="form-field">
-                  <label>5. Which city are you in right now?</label>
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+                    <label id="lblT1City" style="margin-bottom:0;">5. Which city are you in right now?</label>
+                    <button type="button" class="mode-pill btn-play-subq" data-subq-label="lblT1City" style="font-size:11.5px;padding:3px 10px;">▶ Play (2x)</button>
+                  </div>
                   <div class="input-with-mic">
-                    <input type="text" id="t1City" placeholder="e.g. Lahore" />
+                    <input type="text" id="t1City" placeholder="Speak or type current city" />
                     <button type="button" class="btn-field-mic" data-voice-field="t1City" title="Speak city">🎙️ Speak</button>
                   </div>
                 </div>
@@ -319,44 +580,40 @@
             <!-- TEST 2: WORD RECALL (IMMEDIATE) -->
             <div class="test-pane hidden" id="testPane2">
               <div class="word-bank-display">
-                <p class="word-bank-hint">Listen to the voice examiner read these 5 words aloud, then speak them back into the microphone:</p>
+                <p class="word-bank-hint">Listen to the voice examiner read these 5 AI-selected words aloud (repeats up to 2 times), then speak them back into the microphone:</p>
                 <div class="word-chips-row" id="t2WordChips">
-                  <span class="word-chip">River</span>
-                  <span class="word-chip">Mango</span>
-                  <span class="word-chip">Window</span>
-                  <span class="word-chip">Lantern</span>
-                  <span class="word-chip">Carpet</span>
+                  <span class="word-chip">Generating AI Words...</span>
                 </div>
                 <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-                  <button type="button" class="btn-examiner-speak" id="btnExaminerSpeakWords">🔊 Examiner: Read 5 Words Aloud</button>
+                  <button type="button" class="btn-examiner-speak" id="btnExaminerSpeakWords">▶ Play 5 Words Aloud (2x Repeat)</button>
                   <button type="button" class="btn-outline-green" id="btnHideT2Words">Hide Word Cards</button>
                 </div>
               </div>
               <div class="form-field" style="margin-top: 16px;">
-                <label>Spoken / Repeated Words (Captured via Voice Recognition):</label>
+                <label>Spoken / Repeated Words (Captured via Voice Recognition or Typed):</label>
                 <div class="input-with-mic">
-                  <input type="text" id="t2Response" value="river mango window lantern carpet" placeholder="Speak the 5 words into the microphone..." />
+                  <input type="text" id="t2Response" value="" placeholder="Speak the 5 words into the microphone..." />
                   <button type="button" class="btn-field-mic" data-voice-field="t2Response">🎙️ Speak Words</button>
                 </div>
               </div>
             </div>
 
-            <!-- TEST 3: ANIMAL NAMING (60 SECONDS LIVE MIC STREAM) -->
+            <!-- TEST 3: VERBAL CATEGORY FLUENCY (60 SECONDS LIVE MIC STREAM) -->
             <div class="test-pane hidden" id="testPane3">
               <div class="timer-bar-box">
                 <div class="timer-circle" id="t3TimerDisplay">60s</div>
                 <div>
-                  <strong>60-Second Animal Naming Challenge</strong>
-                  <p>Name as many different animals as possible aloud. The microphone will capture every animal you speak in real time.</p>
+                  <strong id="t3CategoryTitle">60-Second Verbal Fluency Challenge (Animals)</strong>
+                  <p id="t3CategoryPrompt">Name as many different items in this category as possible aloud. The microphone will capture every word you speak in real time.</p>
                 </div>
                 <button type="button" class="btn-upload-main" id="btnStartT3Timer">▶ Start 60s Test &amp; Open Microphone 🎙️</button>
               </div>
               <div class="form-field" style="margin-top: 16px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                  <label>Animals Spoken by the Person:</label>
-                  <button type="button" class="btn-field-mic" data-voice-field="t3Response">🎙️ Add Animals via Voice</button>
+                  <label>Words Spoken by the Person:</label>
+                  <button type="button" class="btn-field-mic" data-voice-field="t3Response">🎙️ Add via Voice</button>
                 </div>
-                <textarea id="t3Response" rows="3" placeholder="Speak animals into the microphone (e.g. cat dog cow goat horse lion tiger elephant...)">cat dog cow goat horse lion tiger elephant deer monkey bear rabbit squirrel fox</textarea>
+                <textarea id="t3Response" rows="3" placeholder="Speak into the microphone or type the words spoken by the patient..."></textarea>
               </div>
             </div>
 
@@ -389,11 +646,11 @@
                       <label>Spoken Description of the Scene:</label>
                       <button type="button" class="btn-field-mic" data-voice-field="t4Response">🎙️ Speak Story Aloud</button>
                     </div>
-                    <textarea id="t4Response" rows="4">In the courtyard grandmother is sitting on a charpoy under a green tree holding a teapot and cup while a child reads a book and a sparrow watches from the branch.</textarea>
+                    <textarea id="t4Response" rows="4" placeholder="Click 'Speak Story Aloud' and describe everything happening in the picture..."></textarea>
                   </div>
                   <div class="form-field">
                     <label>Longest Speech Pause Observed (milliseconds):</label>
-                    <input type="number" id="t4PauseMs" value="1400" min="0" max="60000" />
+                    <input type="number" id="t4PauseMs" value="0" min="0" max="60000" />
                   </div>
                 </div>
               </div>
@@ -406,25 +663,24 @@
                   <div class="clock-canvas-header">
                     <strong>Draw a Clock Showing <span id="t5TargetTime">11:10</span></strong>
                     <div class="clock-canvas-actions">
-                      <button type="button" class="mode-pill" id="btnDrawSampleClock">Auto-Draw Sample Clock</button>
                       <button type="button" class="mode-pill" id="btnClearClockCanvas">Clear Canvas</button>
                     </div>
                   </div>
                   <canvas id="clockCanvas" width="280" height="280" class="drawing-canvas"></canvas>
                   <button type="button" class="btn-upload-main" id="btnRunClockVisionCheck" style="margin-top: 10px;">
-                    Run Vision Checklist Pre-Fill
+                    🔍 Analyze Drawn Clock with AI Vision
                   </button>
                 </div>
 
                 <div class="clock-checklist-box">
                   <h4>Caregiver Confirmation Checklist (Required Before Saving)</h4>
-                  <p class="scanner-card__hint">Verify or edit the 6 clock elements drawn by the person:</p>
-                  <label class="consent-row"><input type="checkbox" id="chkClockCircle" checked /> <span>1. Closed circle drawn</span></label>
-                  <label class="consent-row"><input type="checkbox" id="chkClockNumbers" checked /> <span>2. All 12 numbers present</span></label>
-                  <label class="consent-row"><input type="checkbox" id="chkClockOrder" checked /> <span>3. Numbers in correct order</span></label>
-                  <label class="consent-row"><input type="checkbox" id="chkClockSpacing" checked /> <span>4. Numbers spaced evenly</span></label>
-                  <label class="consent-row"><input type="checkbox" id="chkClockTwoHands" checked /> <span>5. Two clock hands drawn</span></label>
-                  <label class="consent-row"><input type="checkbox" id="chkClockTimeMatch" checked /> <span>6. Hands point to target time (11:10)</span></label>
+                  <p class="scanner-card__hint">Draw the clock on the canvas and click "Analyze Drawn Clock with AI Vision", or verify the 6 elements manually:</p>
+                  <label class="consent-row"><input type="checkbox" id="chkClockCircle" /> <span>1. Closed circle drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockNumbers" /> <span>2. All 12 numbers present</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockOrder" /> <span>3. Numbers in correct order</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockSpacing" /> <span>4. Numbers spaced evenly</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTwoHands" /> <span>5. Two clock hands drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTimeMatch" /> <span>6. Hands point to target time (<span id="chkClockTargetLabel">11:10</span>)</span></label>
                 </div>
               </div>
             </div>
@@ -434,7 +690,7 @@
               <div class="dot-game-header">
                 <div>
                   <strong>Tap Numbered Dots 1 to 12 in Order (1 &rarr; 2 &rarr; 3 ... &rarr; 12)</strong>
-                  <p>Progress: <strong id="dotGameProgress">12 / 12</strong> · Elapsed: <strong id="dotGameTime">24.0s</strong> · Errors: <strong id="dotGameErrors">0</strong></p>
+                  <p>Progress: <strong id="dotGameProgress">0 / 12</strong> · Elapsed: <strong id="dotGameTime">0.0s</strong> · Errors: <strong id="dotGameErrors">0</strong></p>
                 </div>
                 <button type="button" class="mode-pill" id="btnResetDotGame">Restart Dot Game</button>
               </div>
@@ -450,7 +706,7 @@
               <div class="form-field" style="margin-top: 16px;">
                 <label>Words Recalled Now (Captured via Voice):</label>
                 <div class="input-with-mic">
-                  <input type="text" id="t7Response" value="river mango window lantern" placeholder="Speak the words you remember..." />
+                  <input type="text" id="t7Response" value="" placeholder="Speak the words you remember from Test 2..." />
                   <button type="button" class="btn-field-mic" data-voice-field="t7Response">🎙️ Speak Words</button>
                 </div>
               </div>
@@ -562,9 +818,7 @@
                 <span class="card-step-tag">Stage 2 · Specialist Directory</span>
                 <h3>Find Neurologists, Geriatricians &amp; Memory Clinics</h3>
               </div>
-              <button type="button" class="btn-outline-green" id="btnAddVerifiedDoctorDemo">
-                + Add Verified Clinic Listing (Admin)
-              </button>
+              <span class="verified-pill">Verified Directory</span>
             </div>
 
             <!-- Search Filters -->
@@ -624,17 +878,21 @@
 
               <div class="form-grid-2">
                 <div class="form-field">
-                  <label>Doctor's Findings (in your own words)</label>
-                  <input type="text" id="inpDocFindings" value="Mild memory recall difficulty; follow up in 30 days." />
+                  <label>Upload Prescription / Report Image (Optional for AI Vision)</label>
+                  <input type="file" id="inpDoctorReportFile" accept="image/*,.pdf" />
                 </div>
                 <div class="form-field">
                   <label>Follow-Up Retest Interval (Days)</label>
                   <input type="number" id="inpFollowupDays" value="30" min="7" max="180" />
                 </div>
+                <div class="form-field" style="grid-column: 1 / -1;">
+                  <label>Doctor's Findings &amp; Prescription Text (or let AI extract from uploaded image)</label>
+                  <input type="text" id="inpDocFindings" value="" placeholder="Enter doctor's findings or prescription notes here..." />
+                </div>
               </div>
 
               <button type="button" class="btn-outline-green" id="btnUploadDoctorDoc">
-                📤 Save Uploaded Doctor Report
+                📤 Save Doctor Report &amp; Run AI Prescription Extractor
               </button>
 
               <hr style="border:none;border-top:1px solid var(--border-subtle);" />
@@ -647,11 +905,11 @@
               <div class="form-grid-2">
                 <div class="form-field">
                   <label>Medicine Name (as written by doctor)</label>
-                  <input type="text" id="inpMedName" value="Donepezil" />
+                  <input type="text" id="inpMedName" value="" placeholder="e.g. Donepezil" />
                 </div>
                 <div class="form-field">
                   <label>Prescribed Dose</label>
-                  <input type="text" id="inpMedDose" value="5 mg" />
+                  <input type="text" id="inpMedDose" value="" placeholder="e.g. 5mg" />
                 </div>
                 <div class="form-field">
                   <label>Times Per Day</label>
@@ -664,7 +922,7 @@
               </div>
 
               <label class="consent-row">
-                <input type="checkbox" id="chkConfirmMedicine" checked />
+                <input type="checkbox" id="chkConfirmMedicine" />
                 <strong>I confirm that this medicine name, dose, and schedule match the doctor's prescription.</strong>
               </label>
 
@@ -673,8 +931,17 @@
               </button>
             </div>
 
-            <!-- RIGHT: DAILY MEDICINE LOG & MONTHLY REPORT -->
+            <!-- RIGHT: POST-VISIT ADAPTIVE RETEST, DAILY MEDICINE LOG & MONTHLY REPORT -->
             <div class="scanner-card">
+              <div class="report-block report-block--highlight" style="margin-bottom:14px;">
+                <h4>🧠 Post-Visit AI Adaptive Follow-Up Test</h4>
+                <p style="font-size:13.5px;color:var(--text-mid);margin-bottom:10px;">
+                  Generate a brand-new 7-test session dynamically adapted to the patient's previous test weaknesses, missed markers, and the doctor's post-visit findings.
+                </p>
+                <button type="button" class="btn-glow-green" id="btnStartAdaptiveFollowupTest" style="width:100%;justify-content:center;">
+                  <span>▶ Start AI Adaptive Follow-Up Test (Post-Visit)</span>
+                </button>
+              </div>
               <div class="scanner-card__head">
                 <div>
                   <span class="card-step-tag">Daily Adherence &amp; Monthly Report</span>
@@ -771,6 +1038,6 @@
     </footer>
   </div>
 
-  <script type="module" src="/assets/js/main.js"></script>
+  <script type="module" src="/assets/js/main.js?v=8"></script>
 </body>
 </html>

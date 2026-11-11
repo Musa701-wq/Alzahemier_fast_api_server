@@ -11,6 +11,10 @@ from backend.app.models.schemas import (
     SessionStartRequest,
     TestResultResponse,
 )
+from backend.app.services.ai_client import (
+    generate_personalized_test_battery,
+    generate_post_visit_adaptive_test,
+)
 from backend.app.services.clock_check import clock_vision_provider
 from backend.app.services.outcome import evaluate_session_outcome
 from backend.app.services.reminders import schedule_retest_reminder
@@ -43,7 +47,7 @@ def start_session(
     payload: SessionStartRequest,
     current_user: Dict = Depends(get_current_user),
 ) -> SessionResponse:
-    db.get_person_for_owner(payload.person_id, current_user["id"])
+    person = db.get_person_for_owner(payload.person_id, current_user["id"])
 
     # Consent check before recording any session
     if not (
@@ -55,19 +59,72 @@ def start_session(
             detail="Active audio and data_processing consents are required before starting a session.",
         )
 
-    existing_sessions = [
-        s for s in db.test_sessions.values() if s["person_id"] == payload.person_id
-    ]
+    existing_sessions = sorted(
+        (s for s in db.test_sessions.values() if s["person_id"] == payload.person_id),
+        key=lambda s: s["session_date"],
+    )
     banks = db.get_scoring_config("item_banks").get("versions", {"1": {}})
     available_versions = sorted(int(k) for k in banks.keys())
     next_version = available_versions[len(existing_sessions) % len(available_versions)]
-    prompts = banks.get(str(next_version), {})
+
+    # Collect all previously used recall words across past sessions so they never repeat
+    previous_words: List[str] = []
+    for past_s in existing_sessions:
+        past_prompts = past_s.get("item_prompts") or {}
+        for w in past_prompts.get("words_en") or []:
+            if w and w not in previous_words:
+                previous_words.append(w)
+
+    completed_sessions = [
+        s for s in existing_sessions if s.get("completed") and s.get("total_score") is not None
+    ]
+    last_completed = completed_sessions[-1] if completed_sessions else None
+
+    session_mode = payload.session_mode
+    baseline_session_id: Optional[str] = None
+    adaptive_context: Optional[Dict[str, Any]] = None
+
+    if session_mode == "post_visit_adaptive":
+        last_results = (
+            [r for r in db.test_results.values() if r["session_id"] == last_completed["id"]]
+            if last_completed
+            else []
+        )
+        person_docs = sorted(
+            (d for d in db.doctor_documents.values() if d["person_id"] == payload.person_id),
+            key=lambda d: d["uploaded_at"],
+            reverse=True,
+        )
+        latest_doc = person_docs[0] if person_docs else None
+        person_meds = [m for m in db.medicines.values() if m["person_id"] == payload.person_id]
+
+        prompts = generate_post_visit_adaptive_test(
+            person=person,
+            last_session=last_completed,
+            last_results=last_results,
+            doctor_doc=latest_doc,
+            medicines=person_meds,
+            previous_words=previous_words,
+            session_index=len(existing_sessions),
+        )
+        baseline_session_id = last_completed["id"] if last_completed else None
+        adaptive_context = prompts.get("adaptive_context")
+    else:
+        prompts = generate_personalized_test_battery(
+            person=person,
+            previous_words=previous_words,
+            session_index=len(existing_sessions),
+        )
 
     session_id = str(uuid.uuid4())
     session = {
         "id": session_id,
         "person_id": payload.person_id,
         "session_date": utc_now_iso(),
+        "session_mode": session_mode,
+        "baseline_session_id": baseline_session_id,
+        "adaptive_context": adaptive_context,
+        "domain_deltas": None,
         "item_bank_version": next_version,
         "item_prompts": prompts,
         "total_score": None,
@@ -132,7 +189,8 @@ def complete_session(
         and s.get("total_score") is not None
     ]
     prev_sessions.sort(key=lambda s: s["session_date"])
-    prev_score = prev_sessions[-1]["total_score"] if prev_sessions else None
+    prev_session = prev_sessions[-1] if prev_sessions else None
+    prev_score = prev_session["total_score"] if prev_session else None
 
     total_score, domain_scores = compute_session_aggregates(session_results)
     outcome, reason, next_step, score_change = evaluate_session_outcome(
@@ -141,8 +199,17 @@ def complete_session(
         previous_total_score=prev_score,
     )
 
+    domain_deltas: Optional[Dict[str, float]] = None
+    if prev_session and prev_session.get("domain_scores"):
+        prev_doms = prev_session["domain_scores"]
+        domain_deltas = {}
+        for dom, cur_val in domain_scores.items():
+            if dom in prev_doms:
+                domain_deltas[dom] = round(float(cur_val) - float(prev_doms[dom]), 2)
+
     session["total_score"] = total_score
     session["domain_scores"] = domain_scores
+    session["domain_deltas"] = domain_deltas
     session["outcome"] = outcome
     session["outcome_reason"] = reason
     session["next_step"] = next_step
@@ -200,4 +267,3 @@ def get_session(
         )
     ]
     return SessionResponse(**session, results=res_list)
-

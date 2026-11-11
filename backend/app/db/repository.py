@@ -1,9 +1,81 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import logging
+import os
+import sys
 import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
+from backend.app.core.config import settings
+from backend.app.db.seed_data import build_seed_doctors, build_seed_safety_resources
+
+logger = logging.getLogger("yaadasht.db")
+
+
+class MongoSyncedDict(dict):
+    """
+    Dictionary backed by a MongoDB collection when MongoDB is connected.
+    Provides O(1) reads and writes while persisting every document change to MongoDB.
+    """
+
+    def __init__(self, collection=None, initial: Optional[Dict[str, Any]] = None):
+        super().__init__()
+        self._col = collection
+        if self._col is not None:
+            try:
+                for doc in self._col.find({}, {"_id": 0}):
+                    doc_key = doc.get("_key_id") or doc.get("id") or doc.get("_key")
+                    if doc_key:
+                        if "_val" in doc:
+                            super().__setitem__(str(doc_key), doc["_val"])
+                        else:
+                            clean_doc = {k: v for k, v in doc.items() if k != "_key_id"}
+                            super().__setitem__(str(doc_key), clean_doc)
+            except Exception as exc:
+                logger.warning("MongoDB collection load notice: %s", exc)
+        if initial:
+            missing_docs = []
+            for k, v in initial.items():
+                if k not in self:
+                    super().__setitem__(str(k), v)
+                    if self._col is not None:
+                        if isinstance(v, dict) and "id" in v:
+                            payload = {dk: dv for dk, dv in v.items() if dk != "_id"}
+                        else:
+                            payload = {"_key": str(k), "_val": v}
+                        missing_docs.append({"_key_id": str(k), **payload})
+            if missing_docs and self._col is not None:
+                try:
+                    for doc_item in missing_docs:
+                        self._col.replace_one(
+                            {"_key_id": doc_item["_key_id"]},
+                            doc_item,
+                            upsert=True,
+                        )
+                except Exception as exc:
+                    logger.debug("MongoDB seed notice: %s", exc)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        super().__setitem__(key, value)
+        if self._col is not None:
+            try:
+                if isinstance(value, dict) and "id" in value:
+                    payload = {k: v for k, v in value.items() if k != "_id"}
+                else:
+                    payload = {"_key": str(key), "_val": value}
+                self._col.replace_one({"_key_id": str(key)}, {"_key_id": str(key), **payload}, upsert=True)
+            except Exception as exc:
+                logger.debug("MongoDB write notice: %s", exc)
+
+    def pop(self, key: str, *args) -> Any:
+        res = super().pop(key, *args)
+        if self._col is not None:
+            try:
+                self._col.delete_one({"_key_id": str(key)})
+            except Exception as exc:
+                logger.debug("MongoDB delete notice: %s", exc)
+        return res
 
 
 def utc_now_iso() -> str:
@@ -173,31 +245,85 @@ DEFAULT_SCORING_CONFIG: Dict[str, Dict[str, Any]] = {
 
 class YaadashtRepository:
     """
-    Repository enforcing Row Level Security (RLS) semantics for all 17 Yaadasht tables.
+    Repository enforcing Row Level Security (RLS) semantics for all 17 Yaadasht tables,
+    backed by MongoDB when MONGODB_URI is reachable.
     """
 
     def __init__(self) -> None:
-        self.reset()
+        self._mongo_client = None
+        self._mongo_db = None
+        self.mongo_connected = False
+        self._init_mongo()
+        self.reset(clear_mongo=False)
 
-    def reset(self) -> None:
-        self.profiles: Dict[str, Dict[str, Any]] = {}
-        self.credentials: Dict[str, Dict[str, str]] = {}
-        self.persons: Dict[str, Dict[str, Any]] = {}
-        self.consents: Dict[str, Dict[str, Any]] = {}
-        self.test_sessions: Dict[str, Dict[str, Any]] = {}
-        self.test_results: Dict[str, Dict[str, Any]] = {}
-        self.scoring_config: Dict[str, Dict[str, Any]] = deepcopy(DEFAULT_SCORING_CONFIG)
-        self.reports: Dict[str, Dict[str, Any]] = {}
-        self.report_shares: Dict[str, Dict[str, Any]] = {}
-        self.doctors: Dict[str, Dict[str, Any]] = {}
-        self.favorite_doctors: Dict[str, Dict[str, Any]] = {}
-        self.doctor_problem_reports: Dict[str, Dict[str, Any]] = {}
-        self.doctor_documents: Dict[str, Dict[str, Any]] = {}
-        self.medicines: Dict[str, Dict[str, Any]] = {}
-        self.medicine_logs: Dict[str, Dict[str, Any]] = {}
-        self.monthly_summaries: Dict[str, Dict[str, Any]] = {}
-        self.reminders: Dict[str, Dict[str, Any]] = {}
-        self.safety_resources: Dict[str, Dict[str, Any]] = {}
+    def _init_mongo(self) -> None:
+        uri = (settings.MONGODB_URI or "").strip()
+        if not uri or "pytest" in sys.modules:
+            return
+        try:
+            from pymongo import MongoClient
+
+            client = MongoClient(uri, serverSelectionTimeoutMS=6000, connectTimeoutMS=6000)
+            client.admin.command("ping")
+            self._mongo_client = client
+            self._mongo_db = client[settings.MONGODB_DB_NAME or "yaadasht_db"]
+            self.mongo_connected = True
+            logger.info("Connected to MongoDB database '%s'", settings.MONGODB_DB_NAME)
+        except Exception as exc:
+            self._mongo_client = None
+            self._mongo_db = None
+            self.mongo_connected = False
+            logger.info("MongoDB not reachable at '%s' (%s); using in-memory store until MongoDB is started.", uri, exc)
+
+    def _col(self, name: str):
+        return self._mongo_db[name] if (self.mongo_connected and self._mongo_db is not None) else None
+
+    def get_db_status(self) -> Dict[str, Any]:
+        return {
+            "engine": "mongodb" if self.mongo_connected else "in_memory_fallback",
+            "mongodb_connected": self.mongo_connected,
+            "mongodb_uri_configured": bool((settings.MONGODB_URI or "").strip()),
+            "database_name": settings.MONGODB_DB_NAME,
+        }
+
+    def reset(self, clear_mongo: bool = False) -> None:
+        if clear_mongo and self.mongo_connected and self._mongo_db is not None:
+            for col_name in (
+                "profiles", "credentials", "persons", "consents", "test_sessions",
+                "test_results", "scoring_config", "reports", "report_shares",
+                "doctors", "favorite_doctors", "doctor_problem_reports",
+                "doctor_documents", "medicines", "medicine_logs",
+                "monthly_summaries", "reminders", "safety_resources",
+            ):
+                try:
+                    self._mongo_db[col_name].delete_many({})
+                except Exception:
+                    pass
+
+        self.profiles: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("profiles"))
+        self.credentials: Dict[str, Dict[str, str]] = MongoSyncedDict(self._col("credentials"))
+        self.persons: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("persons"))
+        self.consents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("consents"))
+        self.test_sessions: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_sessions"))
+        self.test_results: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_results"))
+        self.scoring_config: Dict[str, Dict[str, Any]] = MongoSyncedDict(
+            self._col("scoring_config"), initial=deepcopy(DEFAULT_SCORING_CONFIG)
+        )
+        self.reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reports"))
+        self.report_shares: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("report_shares"))
+        self.doctors: Dict[str, Dict[str, Any]] = MongoSyncedDict(
+            self._col("doctors"), initial=build_seed_doctors()
+        )
+        self.favorite_doctors: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("favorite_doctors"))
+        self.doctor_problem_reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_problem_reports"))
+        self.doctor_documents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_documents"))
+        self.medicines: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicines"))
+        self.medicine_logs: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicine_logs"))
+        self.monthly_summaries: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("monthly_summaries"))
+        self.reminders: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reminders"))
+        self.safety_resources: Dict[str, Dict[str, Any]] = MongoSyncedDict(
+            self._col("safety_resources"), initial=build_seed_safety_resources()
+        )
         self.storage_files: Dict[str, bytes] = {}
 
     # ------------------------------------------------------------------
@@ -211,8 +337,7 @@ class YaadashtRepository:
         email: str,
         password: str,
         full_name: str,
-        language: str = "ur",
-        role: str = "user",
+        language: str = "en",
     ) -> Dict[str, Any]:
         norm_email = email.strip().lower()
         for cred in self.credentials.values():
@@ -228,7 +353,7 @@ class YaadashtRepository:
             "email": norm_email,
             "full_name": full_name.strip(),
             "language": language,
-            "role": role,
+            "role": "caregiver",
             "push_token": None,
             "created_at": now,
         }
@@ -272,6 +397,13 @@ class YaadashtRepository:
             "age": data["age"],
             "gender": data["gender"].strip(),
             "city": data["city"].strip(),
+            "education_level": (data.get("education_level") or "secondary").strip(),
+            "occupation": (data.get("occupation") or "retired").strip(),
+            "living_situation": (data.get("living_situation") or "with_family").strip(),
+            "family_history_dementia": bool(data.get("family_history_dementia", False)),
+            "medical_conditions": list(data.get("medical_conditions") or []),
+            "observed_symptoms": list(data.get("observed_symptoms") or []),
+            "symptom_duration_months": int(data.get("symptom_duration_months") or 6),
             "created_at": utc_now_iso(),
         }
         self.persons[person_id] = person
@@ -294,8 +426,21 @@ class YaadashtRepository:
 
     def update_person(self, person_id: str, owner_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         person = self.get_person_for_owner(person_id, owner_id)
+        allowed_fields = (
+            "name",
+            "age",
+            "gender",
+            "city",
+            "education_level",
+            "occupation",
+            "living_situation",
+            "family_history_dementia",
+            "medical_conditions",
+            "observed_symptoms",
+            "symptom_duration_months",
+        )
         for k, v in updates.items():
-            if v is not None and k in ("name", "age", "gender", "city"):
+            if v is not None and k in allowed_fields:
                 person[k] = v
         self.persons[person_id] = person
         return deepcopy(person)

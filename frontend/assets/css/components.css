@@ -1,3 +1,148 @@
+/* =========================================================
+   AI TEST GENERATION LOADING OVERLAY
+   ========================================================= */
+.ai-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(3, 55, 40, 0.72);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ai-loading-overlay.hidden {
+  display: none !important;
+}
+
+.ai-loading-modal {
+  background: #ffffff;
+  border: 2px solid var(--green-bright);
+  border-radius: 24px;
+  padding: 32px 28px;
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 28px 70px rgba(3, 55, 40, 0.45);
+}
+
+.ai-loading-spinner {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  border: 4px solid #d1fae5;
+  border-top-color: #059669;
+  border-right-color: #10b981;
+  animation: spinLoader 0.85s linear infinite;
+}
+
+@keyframes spinLoader {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-loading-modal h3 {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-dark);
+  margin: 12px 0 8px;
+}
+
+.ai-loading-modal p {
+  font-size: 14px;
+  color: var(--text-mid);
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.ai-loading-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid rgba(5, 150, 105, 0.16);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.ai-loading-step-item {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mid);
+}
+
+.ai-loading-step-item.active {
+  color: #047857;
+  font-weight: 700;
+}
+
+/* =========================================================
+   PATIENT CAREGIVER COMMAND CENTER ON HOME
+   ========================================================= */
+.dash-profile-summary {
+  background: #f8fafc;
+  border: 1px solid rgba(5, 150, 105, 0.16);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.dash-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.dash-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-meta-item span {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-mid);
+}
+
+.dash-meta-item strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-dark);
+}
+
+.dash-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.dash-tag-chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.dash-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 /* Shared Eyebrow Pill & Glowing Button */
 .eyebrow-pill {
   display: inline-flex;
@@ -78,26 +223,156 @@
 .hero-full {
   width: 100%;
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 4vw;
-  align-items: center;
-  padding: 20px 0 56px;
+  grid-template-columns: 1.12fr 0.88fr;
+  gap: 3.5vw;
+  align-items: start;
+  padding: 8px 0 44px;
+}
+
+.hero-full__left {
+  padding-top: 6px;
 }
 
 .hero-display {
-  font-size: clamp(36px, 4vw, 56px);
+  font-size: clamp(34px, 3.6vw, 52px);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.03em;
   color: var(--text-dark);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .hero-lead {
-  font-size: clamp(16px, 1.3vw, 19px);
+  font-size: clamp(15.5px, 1.2vw, 18px);
   color: var(--text-mid);
   max-width: 640px;
-  margin-bottom: 34px;
+  margin-bottom: 24px;
+}
+
+/* Left Column Clinical Showcase & 3-Step Journey */
+.hero-clinical-showcase {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 660px;
+}
+
+.hero-domains-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(5, 150, 105, 0.18);
+  border-radius: 18px;
+  padding: 18px 20px;
+  box-shadow: 0 8px 24px rgba(5, 150, 105, 0.06);
+}
+
+.hero-domains-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.hero-domains-card__title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--green-dark);
+}
+
+.hero-domains-card__badge {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.hero-domains-pills {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 9px;
+}
+
+.domain-mini-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(5, 150, 105, 0.14);
+  border-radius: 11px;
+  font-size: 13px;
+  color: var(--text-dark);
+}
+
+.domain-mini-chip strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hero-journey-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.journey-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 13px 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(5, 150, 105, 0.15);
+  border-radius: 15px;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.04);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.journey-step-item:hover {
+  transform: translateX(3px);
+  border-color: rgba(5, 150, 105, 0.35);
+}
+
+.journey-step-num {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.journey-step-item h4 {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-dark);
+  margin: 0 0 3px;
+}
+
+.journey-step-item p {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-mid);
+  margin: 0;
 }
 
 /* Animated Hologram Brain Scanner on Right */
@@ -1832,4 +2107,128 @@
   border-color: #ef4444;
   color: #dc2626;
   animation: pulseRing 1.5s infinite;
+}
+
+/* =========================================================
+   LOGGED-IN CAREGIVER COMMAND HUB (FULL-WIDTH HOME VIEW)
+   ========================================================= */
+.logged-in-home {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.logged-hero-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+  border: 1.5px solid #a7f3d0;
+}
+
+.logged-meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.logged-hero-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.logged-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.logged-kpi-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.logged-kpi-val {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--green-dark);
+}
+
+.logged-kpi-sub {
+  font-size: 12.5px;
+  color: var(--text-mid);
+}
+
+.logged-workspace-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.logged-shortcuts-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.logged-shortcut-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--green-border);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logged-shortcut-btn:hover {
+  background: var(--bg-mint);
+  border-color: var(--green-main);
+  transform: translateY(-1px);
+}
+
+.logged-shortcut-icon {
+  font-size: 22px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(5, 150, 105, 0.1);
+}
+
+.logged-shortcut-btn strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text-dark);
+}
+
+.logged-shortcut-btn span {
+  font-size: 12.5px;
+  color: var(--text-mid);
+}
+
+@media (max-width: 960px) {
+  .logged-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .logged-workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }

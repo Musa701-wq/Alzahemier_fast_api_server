@@ -1,23 +1,23 @@
-let authToken = null;
-let adminToken = null;
+
+let authToken = localStorage.getItem("yaadasht_auth_token") || null;
 
 export function setAuthToken(token) {
   authToken = token;
-}
-
-export function setAdminToken(token) {
-  adminToken = token;
+  if (token) {
+    localStorage.setItem("yaadasht_auth_token", token);
+  } else {
+    localStorage.removeItem("yaadasht_auth_token");
+  }
 }
 
 export function getAuthToken() {
   return authToken;
 }
 
-async function apiRequest(path, { method = "GET", body = null, useAdmin = false } = {}) {
+async function apiRequest(path, { method = "GET", body = null } = {}) {
   const headers = {};
-  const tokenToUse = useAdmin && adminToken ? adminToken : authToken;
-  if (tokenToUse) {
-    headers["Authorization"] = `Bearer ${tokenToUse}`;
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
   }
   if (body !== null) {
     headers["Content-Type"] = "application/json";
@@ -33,7 +33,9 @@ async function apiRequest(path, { method = "GET", body = null, useAdmin = false 
     let errDetail = `Request failed (${response.status})`;
     try {
       const errJson = await response.json();
-      if (errJson.detail) errDetail = errJson.detail;
+      if (errJson.detail) {
+        errDetail = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
+      }
     } catch {
       // Ignore parse error
     }
@@ -49,10 +51,10 @@ export async function fetchHealthStatus() {
   return { data, latencyMs: Math.round(performance.now() - start) };
 }
 
-export async function signupUser({ email, password, full_name, language = "en", role = "user" }) {
+export async function signupUser({ email, password, full_name, language = "en" }) {
   return apiRequest("/auth/signup", {
     method: "POST",
-    body: { email, password, full_name, language, role },
+    body: { email, password, full_name, language },
   });
 }
 
@@ -63,23 +65,52 @@ export async function loginUser({ email, password }) {
   });
 }
 
-export async function createOrUpdatePerson({ name, age, gender, city }, existingPersonId = null) {
+export async function emailAccessUser({ email, mode = "login", full_name = "Caregiver Account" }) {
+  return apiRequest("/auth/email-access", {
+    method: "POST",
+    body: { email, mode, full_name },
+  });
+}
+
+export async function fetchCurrentUser() {
+  return apiRequest("/auth/me");
+}
+
+export async function fetchMyPerson() {
+  return apiRequest("/persons/me");
+}
+
+export async function createOrUpdatePerson(personData, existingPersonId = null) {
+  const payload = {
+    name: personData.name,
+    age: Number(personData.age),
+    gender: personData.gender,
+    city: personData.city,
+    education_level: personData.education_level || "secondary",
+    occupation: personData.occupation || "retired",
+    living_situation: personData.living_situation || "with_family",
+    family_history_dementia: Boolean(personData.family_history_dementia),
+    medical_conditions: personData.medical_conditions || [],
+    observed_symptoms: personData.observed_symptoms || [],
+    symptom_duration_months: Number(personData.symptom_duration_months ?? 6),
+  };
+
   if (existingPersonId) {
     return apiRequest(`/persons/${existingPersonId}`, {
       method: "PATCH",
-      body: { name, age: Number(age), gender, city },
+      body: payload,
     });
   }
   try {
     return await apiRequest("/persons", {
       method: "POST",
-      body: { name, age: Number(age), gender, city },
+      body: payload,
     });
   } catch {
     const existing = await apiRequest("/persons/me");
     return apiRequest(`/persons/${existing.id}`, {
       method: "PATCH",
-      body: { name, age: Number(age), gender, city },
+      body: payload,
     });
   }
 }
@@ -91,10 +122,10 @@ export async function grantConsent(personId, type) {
   });
 }
 
-export async function startSession(personId) {
+export async function startSession(personId, sessionMode = "baseline") {
   return apiRequest("/sessions", {
     method: "POST",
-    body: { person_id: personId },
+    body: { person_id: personId, session_mode: sessionMode },
   });
 }
 
@@ -161,22 +192,6 @@ export async function listDoctors({ city = "", specialty = "", mode = "" } = {})
   return apiRequest(`/doctors${qs}`);
 }
 
-export async function adminCreateDoctor(doctorPayload) {
-  return apiRequest("/admin/doctors", {
-    method: "POST",
-    body: doctorPayload,
-    useAdmin: true,
-  });
-}
-
-export async function adminCreateSafetyResource(resourcePayload) {
-  return apiRequest("/admin/safety-resources", {
-    method: "POST",
-    body: resourcePayload,
-    useAdmin: true,
-  });
-}
-
 export async function uploadDoctorDocument(payload) {
   return apiRequest("/documents", {
     method: "POST",
@@ -234,10 +249,14 @@ export async function evaluatePictureStoryAI(description) {
   });
 }
 
-export async function evaluateClockVisionAI(imageDataUri) {
+export async function evaluateClockVisionAI(imageDataUri, targetTime = "11:10", strokeData = null) {
   return apiRequest("/ai/clock-vision", {
     method: "POST",
-    body: { image_data_uri: imageDataUri },
+    body: {
+      image_data_uri: imageDataUri,
+      target_time: targetTime,
+      stroke_data: strokeData,
+    },
   });
 }
 
@@ -245,5 +264,24 @@ export async function extractPrescriptionAI(prescriptionText, imageDataUri = nul
   return apiRequest("/ai/extract-prescription", {
     method: "POST",
     body: { prescription_text: prescriptionText, image_data_uri: imageDataUri },
+  });
+}
+
+export async function transcribeRecordedAudio({
+  audioWavBase64,
+  durationSeconds = 0,
+  speakingSeconds = 0,
+  pauseMs = 0,
+  stepNumber = 1,
+}) {
+  return apiRequest("/ai/transcribe-audio", {
+    method: "POST",
+    body: {
+      audio_wav_base64: audioWavBase64,
+      duration_seconds: durationSeconds,
+      speaking_seconds: speakingSeconds,
+      pause_ms: pauseMs,
+      step_number: stepNumber,
+    },
   });
 }

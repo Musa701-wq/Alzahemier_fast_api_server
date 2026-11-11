@@ -123,18 +123,24 @@ def score_orientation(
 
 def score_word_recall(
     transcript: str,
-    item_bank_version: int,
+    item_bank_version: int = 1,
+    custom_prompts: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, float, float, List[Dict[str, Any]]]:
     """
     Tests 2 & 7 (Immediate & Delayed Word Recall):
-    1 point per word (0 to 5), fuzzy matching against English, Urdu, and Roman Urdu item bank.
+    1 point per word (0 to 5), fuzzy matching against dynamic session words or item bank.
     """
     banks = db.get_scoring_config("item_banks").get("versions", {})
     bank = banks.get(str(item_bank_version)) or banks.get("1", {})
 
-    words_en = bank.get("words_en", [])
-    words_ur = bank.get("words_ur", [])
-    words_roman = bank.get("words_roman_ur", [])
+    if custom_prompts and custom_prompts.get("words_en"):
+        words_en = [str(w).lower() for w in custom_prompts.get("words_en", [])]
+        words_ur = [str(w).lower() for w in custom_prompts.get("words_ur", [])]
+        words_roman = [str(w).lower() for w in custom_prompts.get("words_roman_ur", [])]
+    else:
+        words_en = bank.get("words_en", [])
+        words_ur = bank.get("words_ur", [])
+        words_roman = bank.get("words_roman_ur", [])
 
     tokens = _tokenize(transcript)
     matched_indices = set()
@@ -165,15 +171,23 @@ def score_word_recall(
     return normalized, points, 5.0, markers
 
 
-def score_animal_naming(transcript: str) -> Tuple[float, float, float, List[Dict[str, Any]]]:
+def score_animal_naming(
+    transcript: str,
+    custom_prompts: Optional[Dict[str, Any]] = None,
+) -> Tuple[float, float, float, List[Dict[str, Any]]]:
     """
-    Test 3 (Animal Naming):
-    Counts unique valid animals in Urdu, Roman Urdu, and English.
-    15 or more animals scores 10/10; fewer is scaled proportionally.
+    Test 3 (Verbal Category Fluency - 60s):
+    Counts unique valid category items (animals + any dynamic category items from custom_prompts).
+    15 or more items scores 10/10; fewer is scaled proportionally.
     """
     lex_cfg = db.get_scoring_config("animal_lexicon")
     target_max = float(lex_cfg.get("target_count_for_max_score", 15))
-    valid_list = [a.lower() for a in lex_cfg.get("valid_animals", [])]
+    valid_set = {a.lower() for a in lex_cfg.get("valid_animals", [])}
+    if custom_prompts and custom_prompts.get("fluency_valid_items"):
+        for item in custom_prompts["fluency_valid_items"]:
+            if item:
+                valid_set.add(str(item).strip().lower())
+    valid_list = sorted(valid_set)
 
     tokens = _tokenize(transcript)
     unique_found: List[str] = []
@@ -202,8 +216,9 @@ def score_animal_naming(transcript: str) -> Tuple[float, float, float, List[Dict
 
 def score_picture_story(
     transcript: str,
-    item_bank_version: int,
+    item_bank_version: int = 1,
     timing: Optional[Dict[str, Any]] = None,
+    custom_prompts: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, float, float, List[Dict[str, Any]]]:
     """
     Test 4 (Picture Story):
@@ -218,7 +233,12 @@ def score_picture_story(
 
     banks = db.get_scoring_config("item_banks").get("versions", {})
     bank = banks.get(str(item_bank_version)) or banks.get("1", {})
-    target_items = [t.lower() for t in bank.get("picture_target_items", [])]
+    target_set = {t.lower() for t in bank.get("picture_target_items", [])}
+    if custom_prompts and custom_prompts.get("picture_target_items"):
+        for t in custom_prompts["picture_target_items"]:
+            if t:
+                target_set.add(str(t).strip().lower())
+    target_items = sorted(target_set)
 
     tokens = _tokenize(transcript)
     word_count = len(tokens)

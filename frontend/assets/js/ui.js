@@ -7,22 +7,18 @@ export function setActiveSessionPrompts(prompts = {}) {
 function getDynamicTestMetadata(stepNum, prompts = activeSessionPrompts) {
   const p = prompts || {};
   const oq = p.orientation_questions || {};
-  const words = Array.isArray(p.words_en) && p.words_en.length === 5
+  const words = Array.isArray(p.words_en) && p.words_en.length > 0
     ? p.words_en.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    : ["Garden", "Kettle", "Mirror", "Bangle", "Pillow"];
-  const fluencyCat = p.fluency_category || "Animals";
-  const fluencyPrompt =
-    p.fluency_prompt ||
-    `You have 60 seconds to name as many different items in "${fluencyCat}" as possible aloud into the microphone.`;
-  const sceneTitle = p.picture_scene_title || "Courtyard Tea Scene";
-  const storyPrompt =
-    p.picture_story_prompt ||
-    "Look closely at the scene illustration and describe everything you see happening into the microphone.";
-  const clockTime = p.clock_target_time || "11:10";
+    : [];
+  const fluencyCat = p.fluency_category || "";
+  const fluencyPrompt = p.fluency_prompt || "";
+  const sceneTitle = p.picture_scene_title || "";
+  const storyPrompt = p.picture_story_prompt || "";
+  const clockTime = p.clock_target_time || "";
 
   const metaMap = {
     1: {
-      domain: "Test 1 of 7 · Orientation Domain (AI-Tailored)",
+      domain: "Test 1 of 5 · Orientation Domain (AI-Tailored)",
       title: "1. Orientation (Time & Place Assessment)",
       instruction:
         oq.instruction ||
@@ -30,46 +26,32 @@ function getDynamicTestMetadata(stepNum, prompts = activeSessionPrompts) {
       speech_prompt: `${oq.day || "What day of the week is today?"} ${oq.date || "What is today's date?"} ${oq.month || "What month is it?"} ${oq.season || "What season is it?"} ${oq.city || "Which city are you in right now?"}`,
     },
     2: {
-      domain: "Test 2 of 7 · Immediate Memory Domain (AI Non-Repeating Words)",
+      domain: "Test 2 of 5 · Immediate Memory Domain (AI Non-Repeating Words)",
       title: `2. Immediate Word Recall (${words.join(" · ")})`,
       instruction: `Listen carefully as the voice examiner reads your 5 personalized words (${words.join(", ")}), then repeat them back in any order.`,
       speech_prompt: `Listen carefully to these five words: ${words.join(", ")}. Please repeat them back into the microphone in any order.`,
     },
     3: {
-      domain: "Test 3 of 7 · Verbal Fluency Domain (AI Category)",
+      domain: "Test 3 of 5 · Verbal Fluency Domain (AI Category)",
       title: `3. 60-Second Verbal Fluency (${fluencyCat})`,
       instruction: fluencyPrompt,
       speech_prompt: fluencyPrompt,
     },
     4: {
-      domain: "Test 4 of 7 · Language & Visual Description Domain",
+      domain: "Test 4 of 5 · Language & Visual Description Domain",
       title: `4. Picture Story (${sceneTitle})`,
       instruction: storyPrompt,
       speech_prompt: storyPrompt,
     },
     5: {
-      domain: "Test 5 of 7 · Planning & Spatial Domain (Dynamic Target)",
-      title: `5. Clock Drawing (Set Hands to ${clockTime})`,
-      instruction: `Draw a circular clock face on the canvas with all 12 numbers and set the two hands to show ${clockTime}.`,
-      speech_prompt: `Draw a clock face on the canvas with all twelve numbers, and set the hands to show ${clockTime}.`,
-    },
-    6: {
-      domain: "Test 6 of 7 · Attention & Processing Speed Domain (Randomized Trail)",
-      title: "6. Trail Making (Connect Dots 1 to 12 in Order)",
+      domain: "Test 5 of 5 · Delayed Memory Domain",
+      title: "5. Delayed Word Recall (Recall Your Earlier 5 Words)",
       instruction:
-        p.test6_instruction ||
-        "Tap the randomized numbered circles in sequential order from 1 up to 12 as quickly and accurately as possible.",
-      speech_prompt:
-        p.test6_instruction ||
-        "Tap the numbered circles in order from 1 up to 12 as quickly and smoothly as you can.",
-    },
-    7: {
-      domain: "Test 7 of 7 · Delayed Memory Domain",
-      title: "7. Delayed Word Recall (Recall Your Earlier 5 Words)",
-      instruction:
+        p.test5_instruction ||
         p.test7_instruction ||
         "Without looking back at Test 2, speak or type the 5 words that were presented to you earlier in this session.",
       speech_prompt:
+        p.test5_instruction ||
         p.test7_instruction ||
         "Now, without looking back, what were the five words you learned earlier in this session? Please speak them aloud into the microphone.",
     },
@@ -108,9 +90,9 @@ export function renderActiveTestStep(stepNum, customPrompts = null) {
   if (domEl) domEl.textContent = meta.domain;
   if (titleEl) titleEl.textContent = meta.title;
   if (instEl) instEl.textContent = meta.instruction;
-  if (subEl) subEl.textContent = `Test ${stepNum} of 7 · Dynamic AI session ready for verbal response`;
+  if (subEl) subEl.textContent = `Test ${stepNum} of 5 · Dynamic AI session ready for verbal response`;
 
-  for (let i = 1; i <= 7; i++) {
+  for (let i = 1; i <= 5; i++) {
     const pane = document.getElementById(`testPane${i}`);
     if (pane) pane.classList.toggle("hidden", i !== stepNum);
   }
@@ -128,9 +110,9 @@ export function renderActiveTestStep(stepNum, customPrompts = null) {
   const nextLabel = document.getElementById("btnNextTestLabel");
   if (nextLabel) {
     nextLabel.textContent =
-      stepNum < 7
+      stepNum < 5
         ? `Save Test ${stepNum} & Continue →`
-        : "Save Test 7 & Complete Session ✓";
+        : "Save Test 5 & Complete Session ✓";
   }
 }
 

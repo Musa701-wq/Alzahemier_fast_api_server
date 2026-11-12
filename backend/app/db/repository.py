@@ -1,8 +1,10 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import json
 import logging
 import os
+from pathlib import Path
 import sys
 import uuid
 from typing import Any, Dict, List, Optional
@@ -12,16 +14,59 @@ from backend.app.db.seed_data import build_seed_doctors, build_seed_safety_resou
 
 logger = logging.getLogger("yaadasht.db")
 
+LOCAL_DB_STORE_PATH = Path(__file__).resolve().parents[3] / "uploads" / "yaadasht_db_store.json"
+LOCAL_DB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+_LOCAL_DB_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _load_local_db_cache() -> Dict[str, Dict[str, Any]]:
+    global _LOCAL_DB_CACHE
+    if "pytest" in sys.modules:
+        return {}
+    if _LOCAL_DB_CACHE:
+        return _LOCAL_DB_CACHE
+    if LOCAL_DB_STORE_PATH.exists():
+        try:
+            raw = json.loads(LOCAL_DB_STORE_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                _LOCAL_DB_CACHE = raw
+        except Exception as exc:
+            logger.debug("Local DB load notice: %s", exc)
+    return _LOCAL_DB_CACHE
+
+
+def _save_local_db_collection(col_name: Optional[str], data_dict: Dict[str, Any]) -> None:
+    if not col_name or "pytest" in sys.modules:
+        return
+    if col_name in ("doctors", "scoring_config", "safety_resources"):
+        return
+    try:
+        cache = _load_local_db_cache()
+        cache[col_name] = dict(data_dict)
+        LOCAL_DB_STORE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Local DB save notice: %s", exc)
+
 
 class MongoSyncedDict(dict):
     """
-    Dictionary backed by a MongoDB collection when MongoDB is connected.
-    Provides O(1) reads and writes while persisting every document change to MongoDB.
+    Dictionary backed by a MongoDB collection when MongoDB is connected,
+    plus automatic local disk persistence (uploads/yaadasht_db_store.json)
+    so user accounts, JWT profiles, patients, and test sessions survive restarts.
     """
 
-    def __init__(self, collection=None, initial: Optional[Dict[str, Any]] = None):
+    def __init__(self, collection=None, initial: Optional[Dict[str, Any]] = None, col_name: Optional[str] = None):
         super().__init__()
         self._col = collection
+        self._col_name = col_name or (getattr(collection, "name", None) if collection is not None else None)
+
+        if self._col_name and "pytest" not in sys.modules:
+            cache = _load_local_db_cache()
+            saved_col = cache.get(self._col_name)
+            if isinstance(saved_col, dict):
+                for k, v in saved_col.items():
+                    super().__setitem__(str(k), v)
+
         if self._col is not None:
             try:
                 for doc in self._col.find({}, {"_id": 0}):
@@ -58,6 +103,7 @@ class MongoSyncedDict(dict):
 
     def __setitem__(self, key: str, value: Any) -> None:
         super().__setitem__(key, value)
+        _save_local_db_collection(self._col_name, self)
         if self._col is not None:
             try:
                 if isinstance(value, dict) and "id" in value:
@@ -70,6 +116,7 @@ class MongoSyncedDict(dict):
 
     def pop(self, key: str, *args) -> Any:
         res = super().pop(key, *args)
+        _save_local_db_collection(self._col_name, self)
         if self._col is not None:
             try:
                 self._col.delete_one({"_key_id": str(key)})
@@ -263,7 +310,7 @@ class YaadashtRepository:
         try:
             from pymongo import MongoClient
 
-            client = MongoClient(uri, serverSelectionTimeoutMS=6000, connectTimeoutMS=6000)
+            client = MongoClient(uri, serverSelectionTimeoutMS=2500, connectTimeoutMS=2500, socketTimeoutMS=4000)
             client.admin.command("ping")
             self._mongo_client = client
             self._mongo_db = client[settings.MONGODB_DB_NAME or "yaadasht_db"]
@@ -273,14 +320,14 @@ class YaadashtRepository:
             self._mongo_client = None
             self._mongo_db = None
             self.mongo_connected = False
-            logger.info("MongoDB not reachable at '%s' (%s); using in-memory store until MongoDB is started.", uri, exc)
+            logger.info("MongoDB not reachable at '%s' (%s); using persistent disk store.", uri, exc)
 
     def _col(self, name: str):
         return self._mongo_db[name] if (self.mongo_connected and self._mongo_db is not None) else None
 
     def get_db_status(self) -> Dict[str, Any]:
         return {
-            "engine": "mongodb" if self.mongo_connected else "in_memory_fallback",
+            "engine": "mongodb" if self.mongo_connected else "persistent_disk_store",
             "mongodb_connected": self.mongo_connected,
             "mongodb_uri_configured": bool((settings.MONGODB_URI or "").strip()),
             "database_name": settings.MONGODB_DB_NAME,
@@ -300,29 +347,29 @@ class YaadashtRepository:
                 except Exception:
                     pass
 
-        self.profiles: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("profiles"))
-        self.credentials: Dict[str, Dict[str, str]] = MongoSyncedDict(self._col("credentials"))
-        self.persons: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("persons"))
-        self.consents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("consents"))
-        self.test_sessions: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_sessions"))
-        self.test_results: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_results"))
+        self.profiles: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("profiles"), col_name="profiles")
+        self.credentials: Dict[str, Dict[str, str]] = MongoSyncedDict(self._col("credentials"), col_name="credentials")
+        self.persons: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("persons"), col_name="persons")
+        self.consents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("consents"), col_name="consents")
+        self.test_sessions: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_sessions"), col_name="test_sessions")
+        self.test_results: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("test_results"), col_name="test_results")
         self.scoring_config: Dict[str, Dict[str, Any]] = MongoSyncedDict(
-            self._col("scoring_config"), initial=deepcopy(DEFAULT_SCORING_CONFIG)
+            self._col("scoring_config"), initial=deepcopy(DEFAULT_SCORING_CONFIG), col_name="scoring_config"
         )
-        self.reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reports"))
-        self.report_shares: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("report_shares"))
+        self.reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reports"), col_name="reports")
+        self.report_shares: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("report_shares"), col_name="report_shares")
         self.doctors: Dict[str, Dict[str, Any]] = MongoSyncedDict(
-            self._col("doctors"), initial=build_seed_doctors()
+            self._col("doctors"), initial=build_seed_doctors(), col_name="doctors"
         )
-        self.favorite_doctors: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("favorite_doctors"))
-        self.doctor_problem_reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_problem_reports"))
-        self.doctor_documents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_documents"))
-        self.medicines: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicines"))
-        self.medicine_logs: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicine_logs"))
-        self.monthly_summaries: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("monthly_summaries"))
-        self.reminders: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reminders"))
+        self.favorite_doctors: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("favorite_doctors"), col_name="favorite_doctors")
+        self.doctor_problem_reports: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_problem_reports"), col_name="doctor_problem_reports")
+        self.doctor_documents: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("doctor_documents"), col_name="doctor_documents")
+        self.medicines: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicines"), col_name="medicines")
+        self.medicine_logs: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("medicine_logs"), col_name="medicine_logs")
+        self.monthly_summaries: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("monthly_summaries"), col_name="monthly_summaries")
+        self.reminders: Dict[str, Dict[str, Any]] = MongoSyncedDict(self._col("reminders"), col_name="reminders")
         self.safety_resources: Dict[str, Dict[str, Any]] = MongoSyncedDict(
-            self._col("safety_resources"), initial=build_seed_safety_resources()
+            self._col("safety_resources"), initial=build_seed_safety_resources(), col_name="safety_resources"
         )
         self.storage_files: Dict[str, bytes] = {}
 

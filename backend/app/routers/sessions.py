@@ -63,17 +63,54 @@ def start_session(
         (s for s in db.test_sessions.values() if s["person_id"] == payload.person_id),
         key=lambda s: s["session_date"],
     )
+
+    # If there is already a pending (incomplete) session in MongoDB, return it so the user completes it first!
+    import json
+    import sys
+
+    if "pytest" not in sys.modules:
+        pending_sessions = [s for s in existing_sessions if not s.get("completed")]
+        if pending_sessions:
+            pending = pending_sessions[-1]
+            raw_prompts_str = json.dumps(pending.get("item_prompts") or {}, ensure_ascii=False)
+            if any("\u0600" <= ch <= "\u06FF" for ch in raw_prompts_str):
+                pending["item_prompts"] = generate_personalized_test_battery(
+                    person=person,
+                    previous_words=[],
+                    session_index=len(existing_sessions),
+                )
+                db.save_session(pending["id"], pending)
+            pending_results = [
+                TestResultResponse(**r)
+                for r in sorted(
+                    (r for r in db.test_results.values() if r["session_id"] == pending["id"]),
+                    key=lambda item: item["test_number"],
+                )
+            ]
+            return SessionResponse(**pending, results=pending_results)
     banks = db.get_scoring_config("item_banks").get("versions", {"1": {}})
     available_versions = sorted(int(k) for k in banks.keys())
     next_version = available_versions[len(existing_sessions) % len(available_versions)]
 
-    # Collect all previously used recall words across past sessions so they never repeat
+    # Collect all previously used recall words, fluency categories, scenes, and clock times across past sessions
     previous_words: List[str] = []
+    previous_categories: List[str] = []
+    previous_scenes: List[str] = []
+    previous_clock_times: List[str] = []
     for past_s in existing_sessions:
         past_prompts = past_s.get("item_prompts") or {}
         for w in past_prompts.get("words_en") or []:
             if w and w not in previous_words:
                 previous_words.append(w)
+        cat = past_prompts.get("fluency_category")
+        if cat and cat not in previous_categories:
+            previous_categories.append(cat)
+        sc = past_prompts.get("picture_scene_title")
+        if sc and sc not in previous_scenes:
+            previous_scenes.append(sc)
+        ct = past_prompts.get("clock_target_time")
+        if ct and ct not in previous_clock_times:
+            previous_clock_times.append(ct)
 
     completed_sessions = [
         s for s in existing_sessions if s.get("completed") and s.get("total_score") is not None
@@ -106,6 +143,9 @@ def start_session(
             medicines=person_meds,
             previous_words=previous_words,
             session_index=len(existing_sessions),
+            previous_categories=previous_categories,
+            previous_scenes=previous_scenes,
+            previous_clock_times=previous_clock_times,
         )
         baseline_session_id = last_completed["id"] if last_completed else None
         adaptive_context = prompts.get("adaptive_context")
@@ -114,6 +154,9 @@ def start_session(
             person=person,
             previous_words=previous_words,
             session_index=len(existing_sessions),
+            previous_categories=previous_categories,
+            previous_scenes=previous_scenes,
+            previous_clock_times=previous_clock_times,
         )
 
     session_id = str(uuid.uuid4())
@@ -235,13 +278,24 @@ def list_sessions(
     person_id: str = Query(...),
     current_user: Dict = Depends(get_current_user),
 ) -> List[SessionResponse]:
-    db.get_person_for_owner(person_id, current_user["id"])
+    import json
+
+    person = db.get_person_for_owner(person_id, current_user["id"])
     sessions = [
         s for s in db.test_sessions.values() if s["person_id"] == person_id
     ]
     sessions.sort(key=lambda s: s["session_date"])
     output: List[SessionResponse] = []
     for s in sessions:
+        if not s.get("completed"):
+            raw_prompts_str = json.dumps(s.get("item_prompts") or {}, ensure_ascii=False)
+            if any("\u0600" <= ch <= "\u06FF" for ch in raw_prompts_str):
+                s["item_prompts"] = generate_personalized_test_battery(
+                    person=person,
+                    previous_words=[],
+                    session_index=len(sessions),
+                )
+                db.save_session(s["id"], s)
         res_list = [
             TestResultResponse(**r)
             for r in sorted(

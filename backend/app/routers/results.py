@@ -48,53 +48,57 @@ def submit_test_result(
     person = db.get_person_for_owner(session["person_id"], current_user["id"])
 
     expected_type = EXPECTED_TEST_TYPES.get(payload.test_number)
-    if payload.test_type != expected_type:
+    norm_type = "animal_naming" if payload.test_type == "verbal_fluency_animals" else payload.test_type
+    allowed_types = {expected_type}
+    if payload.test_number == 5:
+        allowed_types.add("word_recall_delayed")
+    if norm_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Test {payload.test_number} must have test_type '{expected_type}'.",
+            detail=f"Please submit the answer for Test {payload.test_number} ({expected_type}).",
         )
 
     transcript = transcriber.transcribe(fallback_text=payload.raw_response)
     version = session.get("item_bank_version", 1)
     custom_prompts = session.get("item_prompts")
+    timing_data = payload.timing or payload.answers or {}
 
-    if payload.test_number == 1:
+    if norm_type == "orientation":
         norm_score, raw_pts, max_pts, markers = score_orientation(
             answers=payload.answers,
             raw_response=transcript,
             person_city=person["city"],
         )
-    elif payload.test_number == 2:
+    elif norm_type in ("word_recall_immediate", "word_recall_delayed"):
         norm_score, raw_pts, max_pts, markers = score_word_recall(
             transcript=transcript,
             item_bank_version=version,
             custom_prompts=custom_prompts,
         )
-    elif payload.test_number == 3:
+    elif norm_type == "animal_naming":
         norm_score, raw_pts, max_pts, markers = score_animal_naming(
             transcript=transcript,
             custom_prompts=custom_prompts,
         )
-    elif payload.test_number == 4:
+    elif norm_type == "picture_story":
         norm_score, raw_pts, max_pts, markers = score_picture_story(
             transcript=transcript,
             item_bank_version=version,
-            timing=payload.timing,
+            timing=timing_data,
             custom_prompts=custom_prompts,
         )
-    elif payload.test_number == 5:
+    elif norm_type == "clock_drawing":
+        chk_obj = payload.clock_checklist
+        if chk_obj is None and isinstance(payload.answers, dict) and isinstance(payload.answers.get("checklist"), dict):
+            from backend.app.models.schemas import ClockChecklist
+
+            chk_obj = ClockChecklist(**payload.answers["checklist"])
         norm_score, raw_pts, max_pts, markers = score_clock_drawing(
-            checklist=payload.clock_checklist,
+            checklist=chk_obj,
         )
-    elif payload.test_number == 6:
+    elif norm_type == "dot_connecting":
         norm_score, raw_pts, max_pts, markers = score_dot_connecting(
-            timing=payload.timing,
-        )
-    elif payload.test_number == 7:
-        norm_score, raw_pts, max_pts, markers = score_word_recall(
-            transcript=transcript,
-            item_bank_version=version,
-            custom_prompts=custom_prompts,
+            timing=timing_data,
         )
     else:
         raise HTTPException(
@@ -121,7 +125,7 @@ def submit_test_result(
         "id": result_id,
         "session_id": session_id,
         "test_number": payload.test_number,
-        "test_type": payload.test_type,
+        "test_type": norm_type,
         "raw_response": transcript,
         "audio_path": payload.audio_path,
         "stroke_data": payload.stroke_data,

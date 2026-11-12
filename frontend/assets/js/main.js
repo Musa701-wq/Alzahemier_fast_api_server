@@ -1,4 +1,5 @@
 import {
+  checkExistingUser,
   completeSession,
   createConfirmedMedicine,
   createOrUpdatePerson,
@@ -7,6 +8,7 @@ import {
   deletePersonAndAllData,
   downloadReportPdfBlob,
   emailAccessUser,
+  ensureMicReady,
   evaluateClockVisionAI,
   evaluatePictureStoryAI,
   extractPrescriptionAI,
@@ -30,7 +32,7 @@ import {
   submitTestResult,
   transcribeRecordedAudio,
   uploadDoctorDocument,
-} from "./api.js?v=8";
+} from "./api.js?v=19";
 import {
   pauseOrResumeQuestion,
   renderActiveTestStep,
@@ -42,7 +44,7 @@ import {
   speakInstruction,
   stopQuestionAudio,
   switchSection,
-} from "./ui.js?v=8";
+} from "./ui.js?v=19";
 
 // Session & Person State
 let currentPerson = null;
@@ -56,17 +58,24 @@ let sessionStartTimeMs = Date.now();
 let voiceGuideActive = true;
 let isListening = false;
 let activeMicField = null;
+let lastTargetMicField = null;
 let speechRecognitionInstance = null;
 let browserRecognizedDuringSession = false;
+let accumulatedFinalText = "";
+let latestInterimText = "";
 
-// Real-Time Web Audio API Microphone Visualizer + PCM WAV Recorder + Timing State
+// Real-Time Web Audio API Microphone Visualizer + MediaRecorder + PCM WAV Recorder + Timing State
 let audioCtx = null;
 let micAnalyser = null;
 let micMediaStream = null;
 let pcmProcessorNode = null;
 let pcmChunks = [];
 let pcmSampleRate = 16000;
+let mediaRecorderInstance = null;
+let mediaRecorderChunks = [];
 let visualizerRafId = null;
+let liveTranscribeIntervalId = null;
+let liveTranscribeBusy = false;
 
 // Voice Timing Metrics (Total Duration, Active Speaking Time, Hesitation Pause Time)
 let recordStartMs = 0;
@@ -110,14 +119,40 @@ function encodePcmToWavBlob(float32Chunks, sampleRate) {
     offset += c.length;
   }
 
+  // Peak-normalize audio so quiet laptop microphones are loud and clear for playback & STT
+  let peak = 0;
+  for (let i = 0; i < totalLen; i++) {
+    const absVal = Math.abs(merged[i]);
+    if (absVal > peak) peak = absVal;
+  }
+  const gain = peak > 0.0005 && peak < 0.85 ? Math.min(35.0, 0.85 / peak) : 1.0;
+
   let byteOffset = 44;
   for (let i = 0; i < outLen; i++) {
     const idx = Math.min(totalLen - 1, Math.floor(i * ratio));
-    const s = Math.max(-1, Math.min(1, merged[idx] || 0));
+    const s = Math.max(-1, Math.min(1, (merged[idx] || 0) * gain));
     view.setInt16(byteOffset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     byteOffset += 2;
   }
   return new Blob([buffer], { type: "audio/wav" });
+}
+
+async function decodeRecordedBlobToWav(rawBlob, fallbackChunks, fallbackRate) {
+  if (rawBlob && rawBlob.size > 100) {
+    try {
+      const arrayBuf = await rawBlob.arrayBuffer();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const decodeCtx = new AudioContextClass();
+      const audioBuffer = await decodeCtx.decodeAudioData(arrayBuf);
+      const chData = new Float32Array(audioBuffer.getChannelData(0));
+      const sr = audioBuffer.sampleRate || 44100;
+      try {
+        await decodeCtx.close();
+      } catch (_e) { }
+      return encodePcmToWavBlob([chData], sr);
+    } catch (_e) { }
+  }
+  return encodePcmToWavBlob(fallbackChunks, fallbackRate);
 }
 
 function blobToBase64(blob) {
@@ -165,22 +200,50 @@ async function startVoiceVisualizerAndRecorder() {
   try {
     stopQuestionAudio();
 
-    micMediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    // Ensure Windows OS microphone is unmuted and at 100% volume before opening stream
+    await ensureMicReady().catch(() => { });
+
+    try {
+      micMediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+        },
+      });
+    } catch (_e) {
+      micMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     audioCtx = new AudioContextClass();
+    if (audioCtx.state === "suspended") {
+      try {
+        await audioCtx.resume();
+      } catch (_e) { }
+    }
     pcmSampleRate = audioCtx.sampleRate || 44100;
     pcmChunks = [];
+    mediaRecorderChunks = [];
+
+    if (typeof window.MediaRecorder !== "undefined") {
+      try {
+        mediaRecorderInstance = new MediaRecorder(micMediaStream);
+        mediaRecorderInstance.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) {
+            mediaRecorderChunks.push(ev.data);
+          }
+        };
+        mediaRecorderInstance.start(200);
+      } catch (_e) {
+        mediaRecorderInstance = null;
+      }
+    }
 
     const source = audioCtx.createMediaStreamSource(micMediaStream);
     micAnalyser = audioCtx.createAnalyser();
-    micAnalyser.fftSize = 64;
-    micAnalyser.smoothingTimeConstant = 0.75;
+    micAnalyser.fftSize = 256;
+    micAnalyser.smoothingTimeConstant = 0.5;
     source.connect(micAnalyser);
 
     pcmProcessorNode = audioCtx.createScriptProcessor(4096, 1, 1);
@@ -198,8 +261,8 @@ async function startVoiceVisualizerAndRecorder() {
     pauseDurationMs = 0;
     hasSpokenYet = false;
 
-    const bufferLength = micAnalyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+    const bufferLength = micAnalyser.fftSize;
+    const timeDataArray = new Uint8Array(bufferLength);
     const ctx = canvas ? canvas.getContext("2d") : null;
     const w = canvas ? canvas.width : 140;
     const h = canvas ? canvas.height : 28;
@@ -210,32 +273,41 @@ async function startVoiceVisualizerAndRecorder() {
     const renderFrame = () => {
       if (!micAnalyser) return;
       visualizerRafId = requestAnimationFrame(renderFrame);
-      micAnalyser.getByteFrequencyData(dataArray);
+      micAnalyser.getByteTimeDomainData(timeDataArray);
 
       const now = performance.now();
       const dt = Math.max(0, now - lastFrameMs);
       lastFrameMs = now;
 
       if (ctx) ctx.clearRect(0, 0, w, h);
-      let sum = 0;
+      let maxDeviation = 0;
+      const stepSamples = Math.max(1, Math.floor(bufferLength / barCount));
+
       for (let i = 0; i < barCount; i++) {
-        const val = dataArray[i % bufferLength] || 0;
-        sum += val;
-        const pct = val / 255;
+        let localMax = 0;
+        const startIdx = i * stepSamples;
+        for (let j = 0; j < stepSamples; j++) {
+          const sample = timeDataArray[(startIdx + j) % bufferLength] || 128;
+          const dev = Math.abs(sample - 128);
+          if (dev > localMax) localMax = dev;
+        }
+        if (localMax > maxDeviation) maxDeviation = localMax;
+
+        // Amplify visual sensitivity so normal speech shows lively green bars
+        const pct = Math.min(1.0, (localMax / 28.0));
         const bh = Math.max(4, Math.round(pct * (h - 4)));
         const x = i * (barWidth + gap);
         const y = Math.round((h - bh) / 2);
 
         if (ctx) {
-          ctx.fillStyle = pct > 0.45 ? "#059669" : pct > 0.15 ? "#10b981" : "#6ee7b7";
+          ctx.fillStyle = pct > 0.45 ? "#059669" : pct > 0.12 ? "#10b981" : "#6ee7b7";
           ctx.beginPath();
           ctx.roundRect ? ctx.roundRect(x, y, barWidth, bh, 2) : ctx.fillRect(x, y, barWidth, bh);
           ctx.fill();
         }
       }
 
-      const avgPct = Math.min(100, Math.round((sum / (barCount * 150)) * 100));
-      if (avgPct >= 10) {
+      if (maxDeviation >= 2) {
         hasSpokenYet = true;
         speakingDurationMs += dt;
       } else if (hasSpokenYet) {
@@ -258,12 +330,54 @@ async function startVoiceVisualizerAndRecorder() {
     };
 
     renderFrame();
+
+    // Live periodic backend transcription every 2.6 seconds while user is still speaking
+    clearInterval(liveTranscribeIntervalId);
+    liveTranscribeBusy = false;
+    liveTranscribeIntervalId = setInterval(async () => {
+      if (!isListening || liveTranscribeBusy || pcmChunks.length < 6) return;
+      if (speakingDurationMs < 250) return;
+      liveTranscribeBusy = true;
+      try {
+        const snapshotChunks = pcmChunks.slice();
+        const snapshotRate = pcmSampleRate;
+        const targetFieldNow = activeMicField || lastTargetMicField;
+        const stepNow = currentStep;
+        const wavSnap = encodePcmToWavBlob(snapshotChunks, snapshotRate);
+        const wavB64 = await blobToBase64(wavSnap);
+        const res = await transcribeRecordedAudio({
+          audioWavBase64: wavB64,
+          durationSeconds: (performance.now() - recordStartMs) / 1000,
+          speakingSeconds: speakingDurationMs / 1000,
+          pauseMs: Math.round(pauseDurationMs),
+          stepNumber: stepNow,
+        });
+        if (res && res.transcript && isListening) {
+          routeTranscribedTextToField(res.transcript, targetFieldNow, stepNow, true);
+          const bubble = document.getElementById("liveVoiceText");
+          if (bubble) {
+            bubble.textContent = `🎙️ Hearing: "${res.transcript}"`;
+          }
+        }
+      } catch (_e) { } finally {
+        liveTranscribeBusy = false;
+      }
+    }, 2600);
+
+    if (speechRecognitionInstance && isListening) {
+      try {
+        speechRecognitionInstance.start();
+      } catch (_e) { }
+    }
   } catch (err) {
     console.warn("Microphone recorder notice:", err);
   }
 }
 
 async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
+  clearInterval(liveTranscribeIntervalId);
+  liveTranscribeIntervalId = null;
+
   if (visualizerRafId) {
     cancelAnimationFrame(visualizerRafId);
     visualizerRafId = null;
@@ -276,10 +390,29 @@ async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
   const capturedRate = pcmSampleRate;
   pcmChunks = [];
 
+  let recordedMediaBlob = null;
+  if (mediaRecorderInstance) {
+    try {
+      if (mediaRecorderInstance.state !== "inactive") {
+        await new Promise((resolve) => {
+          mediaRecorderInstance.onstop = resolve;
+          mediaRecorderInstance.stop();
+        });
+      }
+      if (mediaRecorderChunks.length > 0) {
+        recordedMediaBlob = new Blob(mediaRecorderChunks, {
+          type: mediaRecorderInstance.mimeType || "audio/webm",
+        });
+      }
+    } catch (_e) { }
+    mediaRecorderInstance = null;
+    mediaRecorderChunks = [];
+  }
+
   if (pcmProcessorNode) {
     try {
       pcmProcessorNode.disconnect();
-    } catch {}
+    } catch (_e) { }
     pcmProcessorNode = null;
   }
   if (micMediaStream) {
@@ -289,7 +422,7 @@ async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
   if (audioCtx) {
     try {
       audioCtx.close();
-    } catch {}
+    } catch (_e) { }
     audioCtx = null;
   }
   micAnalyser = null;
@@ -300,11 +433,11 @@ async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
       : "⏱ 0.0s · Idle";
   drawIdleVoiceVisualizer(summaryBadge);
 
-  if (capturedChunks.length === 0 || totalSec < 0.25) {
+  if ((!recordedMediaBlob && capturedChunks.length === 0) || totalSec < 0.25) {
     return;
   }
 
-  const wavBlob = encodePcmToWavBlob(capturedChunks, capturedRate);
+  const wavBlob = await decodeRecordedBlobToWav(recordedMediaBlob, capturedChunks, capturedRate);
   if (lastRecordedAudioUrl) {
     URL.revokeObjectURL(lastRecordedAudioUrl);
   }
@@ -318,7 +451,7 @@ async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
 
   const bubble = document.getElementById("liveVoiceText");
   if (bubble) {
-    bubble.textContent = `⏳ Processing recorded voice (${totalSec.toFixed(1)}s, Speak: ${speakSec.toFixed(1)}s, Pause: ${pauseSec.toFixed(1)}s)...`;
+    bubble.textContent = "⏳ Converting your voice to text...";
   }
 
   try {
@@ -332,18 +465,21 @@ async function stopVoiceVisualizerAndRecorder(targetFieldAtStop, stepAtStop) {
     });
 
     if (res && res.transcript) {
-      if (!browserRecognizedDuringSession) {
-        routeTranscribedTextToField(res.transcript, targetFieldAtStop, stepAtStop);
-      }
+      routeTranscribedTextToField(res.transcript, targetFieldAtStop, stepAtStop, true);
       if (bubble) {
-        bubble.textContent = `✓ Recorded ${totalSec.toFixed(1)}s (Speak: ${speakSec.toFixed(1)}s, Pause: ${pauseSec.toFixed(1)}s) — "${res.transcript}"`;
+        bubble.textContent = `✓ Voice recorded: "${res.transcript}"`;
       }
     } else if (bubble) {
-      bubble.textContent = `✓ Voice recorded (${totalSec.toFixed(1)}s · Speak ${speakSec.toFixed(1)}s · Pause ${pauseSec.toFixed(1)}s). Click "🔊 Play Voice" to listen.`;
+      const liveText = (accumulatedFinalText + " " + latestInterimText).trim();
+      if (liveText) {
+        bubble.textContent = `✓ Voice recorded: "${liveText}"`;
+      } else {
+        bubble.textContent = "✓ Voice recorded. Click \"🔊 Play Voice\" to listen.";
+      }
     }
-  } catch {
+  } catch (_e) {
     if (bubble) {
-      bubble.textContent = `✓ Voice recorded (${totalSec.toFixed(1)}s · Speak ${speakSec.toFixed(1)}s). Click "🔊 Play Voice" to listen.`;
+      bubble.textContent = "✓ Voice recorded. Click \"🔊 Play Voice\" to listen.";
     }
   }
 }
@@ -369,18 +505,21 @@ function getDefaultTargetFieldForStep(stepNum) {
     }
     return "t1Day";
   }
-  const map = { 2: "t2Response", 3: "t3Response", 4: "t4Response", 7: "t7Response" };
+  const map = { 2: "t2Response", 3: "t3Response", 4: "t4Response", 5: "t5Response" };
   return map[stepNum] || "t1Day";
 }
 
-function routeTranscribedTextToField(spokenText, explicitField = null, stepNum = currentStep) {
+function routeTranscribedTextToField(spokenText, explicitField = null, stepNum = currentStep, replaceValue = false) {
   if (!spokenText) return;
-  const clean = spokenText.trim();
+  const clean = spokenText
+    .replace(/(60\s*seconds?\s*started\.?|second\s*started\.?|please\s*begin\s*speaking\s*now\.?|speaking\s*now\.?|60\s*second\s*please\s*begin\s*speaking\s*now\.?)/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   if (!clean) return;
 
   if (stepNum === 1) {
     const matchedAny = parseOrientationSpeech(clean.toLowerCase());
-    const targetId = explicitField || getDefaultTargetFieldForStep(1);
+    const targetId = explicitField || lastTargetMicField || getDefaultTargetFieldForStep(1);
     const el = document.getElementById(targetId);
     if (el && (!matchedAny || explicitField)) {
       el.value = clean;
@@ -388,10 +527,10 @@ function routeTranscribedTextToField(spokenText, explicitField = null, stepNum =
     return;
   }
 
-  const fieldId = explicitField || getDefaultTargetFieldForStep(stepNum);
+  const fieldId = explicitField || lastTargetMicField || getDefaultTargetFieldForStep(stepNum);
   const el = document.getElementById(fieldId);
   if (el) {
-    if (el.tagName === "TEXTAREA") {
+    if (el.tagName === "TEXTAREA" && !replaceValue) {
       el.value = el.value ? `${el.value} ${clean}` : clean;
     } else {
       el.value = clean;
@@ -422,25 +561,35 @@ function initSpeechRecognition() {
         }
       }
 
-      const activeText = (finalTranscript || interimTranscript).trim();
+      if (finalTranscript.trim()) {
+        accumulatedFinalText = (accumulatedFinalText + " " + finalTranscript.trim()).trim();
+      }
+      latestInterimText = interimTranscript.trim();
+
+      const fullSpokenSoFar = (accumulatedFinalText + " " + latestInterimText).trim();
       const bubble = document.getElementById("liveVoiceText");
-      if (bubble && activeText) {
-        bubble.textContent = `🎙️ Hearing: "${activeText}"`;
+      if (bubble && fullSpokenSoFar) {
+        bubble.textContent = `🎙️ Hearing: "${fullSpokenSoFar}"`;
       }
 
-      if (finalTranscript) {
+      if (fullSpokenSoFar) {
         browserRecognizedDuringSession = true;
-        routeTranscribedTextToField(finalTranscript.trim(), activeMicField, currentStep);
+        routeTranscribedTextToField(
+          fullSpokenSoFar,
+          activeMicField || lastTargetMicField,
+          currentStep,
+          true
+        );
       }
     };
 
-    speechRecognitionInstance.onerror = () => {};
+    speechRecognitionInstance.onerror = () => { };
 
     speechRecognitionInstance.onend = () => {
       if (isListening) {
         try {
           speechRecognitionInstance.start();
-        } catch {}
+        } catch (_e) { }
       }
     };
   } catch (err) {
@@ -506,31 +655,29 @@ function parseOrientationSpeech(lower) {
 
 function toggleSpeechRecognition(targetField = null) {
   if (isListening && (!targetField || targetField === activeMicField)) {
-    const fieldAtStop = activeMicField;
+    const fieldAtStop = activeMicField || lastTargetMicField;
     const stepAtStop = currentStep;
     isListening = false;
     activeMicField = null;
     if (speechRecognitionInstance) {
       try {
         speechRecognitionInstance.stop();
-      } catch {}
+      } catch (_e) { }
     }
     updateMicUIState(false, fieldAtStop, stepAtStop);
     return;
   }
 
   activeMicField = targetField || getDefaultTargetFieldForStep(currentStep);
+  lastTargetMicField = activeMicField;
   browserRecognizedDuringSession = false;
+  accumulatedFinalText = "";
+  latestInterimText = "";
   isListening = true;
 
   const targetInp = document.getElementById(activeMicField);
   if (targetInp) targetInp.focus();
 
-  if (speechRecognitionInstance) {
-    try {
-      speechRecognitionInstance.start();
-    } catch {}
-  }
   updateMicUIState(true, activeMicField, currentStep);
 }
 
@@ -568,6 +715,7 @@ function showAILoadingOverlay(visible, sessionMode = "baseline", patientName = "
   if (!overlay) return;
   if (!visible) {
     overlay.classList.add("hidden");
+    overlay.style.display = "none";
     return;
   }
   const titleEl = document.getElementById("aiLoadingTitle");
@@ -586,9 +734,66 @@ function showAILoadingOverlay(visible, sessionMode = "baseline", patientName = "
     stepEl.textContent = "Syncing profile with MongoDB and preparing 7 cognitive questions.";
   }
   overlay.classList.remove("hidden");
+  overlay.style.display = "flex";
 }
 
-function renderHomePatientDashboard(person, sessions = []) {
+function setGuestAuthTabMode(mode = "login") {
+  const switcherBar = document.getElementById("authModeSwitcherBar");
+  const tabLogin = document.getElementById("btnTabLogin");
+  const tabSignup = document.getElementById("btnTabSignup");
+  const loginView = document.getElementById("guestLoginView");
+  const signupView = document.getElementById("guestSignupView");
+  const cancelBtn = document.getElementById("btnCancelEditProfile");
+  const stepTag = document.getElementById("signupCardStepTag");
+  const heading = document.getElementById("signupCardHeading");
+  const bottomSwitch = document.getElementById("signupBottomSwitchWrap");
+  const saveStartBtn = document.getElementById("btnSaveProfileAndStart");
+
+  if (mode === "edit") {
+    if (switcherBar) switcherBar.style.display = "none";
+    if (loginView) loginView.classList.add("hidden");
+    if (signupView) signupView.classList.remove("hidden");
+    if (cancelBtn) cancelBtn.classList.remove("hidden");
+    if (stepTag) stepTag.textContent = "Update Saved Profile";
+    if (heading) heading.textContent = "Edit Patient Profile";
+    if (bottomSwitch) bottomSwitch.classList.add("hidden");
+    if (saveStartBtn) saveStartBtn.innerHTML = "<span>Save Profile &amp; Resume Test &rarr;</span>";
+    return;
+  }
+
+  if (switcherBar) switcherBar.style.display = "grid";
+  if (cancelBtn) cancelBtn.classList.add("hidden");
+  if (stepTag) stepTag.textContent = "First-Time Patient Registration";
+  if (heading) heading.textContent = "Create Patient Profile";
+  if (bottomSwitch) bottomSwitch.classList.remove("hidden");
+  if (saveStartBtn) saveStartBtn.innerHTML = "<span>Sign Up &amp; Generate AI Test &rarr;</span>";
+
+  if (mode === "signup") {
+    if (loginView) loginView.classList.add("hidden");
+    if (signupView) signupView.classList.remove("hidden");
+    if (tabSignup) {
+      tabSignup.style.background = "var(--emerald-deep)";
+      tabSignup.style.color = "#ffffff";
+    }
+    if (tabLogin) {
+      tabLogin.style.background = "transparent";
+      tabLogin.style.color = "var(--text-mid)";
+    }
+  } else {
+    if (loginView) loginView.classList.remove("hidden");
+    if (signupView) signupView.classList.add("hidden");
+    if (tabLogin) {
+      tabLogin.style.background = "var(--emerald-deep)";
+      tabLogin.style.color = "#ffffff";
+    }
+    if (tabSignup) {
+      tabSignup.style.background = "transparent";
+      tabSignup.style.color = "var(--text-mid)";
+    }
+  }
+}
+
+function renderHomePatientDashboard(person, sessions = [], medicines = null) {
   const loggedView = document.getElementById("homeLoggedInView");
   const guestView = document.getElementById("homeGuestView");
   const cancelBtn = document.getElementById("btnCancelEditProfile");
@@ -606,12 +811,15 @@ function renderHomePatientDashboard(person, sessions = []) {
     }
     if (cancelBtn) cancelBtn.classList.add("hidden");
     if (headerLogoutBtn) headerLogoutBtn.classList.add("hidden");
+    const badge = document.getElementById("activePersonBadge");
+    if (badge) badge.textContent = "Login / Sign Up";
+    setGuestAuthTabMode("login");
     return;
   }
 
   try {
     localStorage.setItem("yaadasht_saved_person", JSON.stringify(person));
-  } catch {}
+  } catch (_e) { }
 
   if (loggedView) {
     loggedView.classList.remove("hidden");
@@ -624,12 +832,17 @@ function renderHomePatientDashboard(person, sessions = []) {
   if (cancelBtn) cancelBtn.classList.remove("hidden");
   if (headerLogoutBtn) headerLogoutBtn.classList.remove("hidden");
 
+  const badge = document.getElementById("activePersonBadge");
+  if (badge && person.name) {
+    badge.textContent = `${person.name} (${person.age}y, ${person.city})`;
+  }
+
   const emailTag = document.getElementById("dashAccountEmailTag");
   const savedEmail = localStorage.getItem("yaadasht_caregiver_email");
   if (emailTag && savedEmail && !savedEmail.endsWith("@yaadasht.local")) {
     emailTag.textContent = `Email: ${savedEmail}`;
   } else if (emailTag) {
-    emailTag.textContent = "Synced with MongoDB";
+    emailTag.textContent = "Active Account";
   }
 
   const nameHeading = document.getElementById("dashPatientNameHeading");
@@ -658,42 +871,101 @@ function renderHomePatientDashboard(person, sessions = []) {
         : `<span class="dash-tag-chip">Baseline Screening</span>`;
   }
 
+  const safeSessions = Array.isArray(sessions) ? sessions : [];
   const countBadge = document.getElementById("dashSessionCountBadge");
-  if (countBadge) countBadge.textContent = `${sessions.length} Session${sessions.length === 1 ? "" : "s"}`;
+  if (countBadge) countBadge.textContent = `${safeSessions.length} Session${safeSessions.length === 1 ? "" : "s"}`;
 
-  const completedList = (sessions || []).filter((s) => s.completed);
+  const completedList = safeSessions.filter((s) => s.completed);
+  const openList = safeSessions.filter((s) => !s.completed);
+  const pendingSession = openList.length > 0 ? openList[openList.length - 1] : null;
+
   const kpiScore = document.getElementById("kpiLatestScore");
   const kpiOutcome = document.getElementById("homeLastOutcomeText");
   const kpiRetest = document.getElementById("kpiNextRetestBadge");
+  const kpiRetestSub = document.getElementById("homeNextRetestText");
+  const kpiMedCount = document.getElementById("kpiMedicineCount");
+  const dashStartBtn = document.getElementById("btnDashStartBaseline");
+  const postVisitBtn = document.getElementById("btnStartAdaptiveFollowupTest");
+
+  if (Array.isArray(medicines)) {
+    if (kpiMedCount) {
+      kpiMedCount.textContent =
+        medicines.length > 0
+          ? `${medicines.length} Active Medicine${medicines.length === 1 ? "" : "s"}`
+          : "0 Active";
+    }
+  }
+
+  if (pendingSession) {
+    const doneCount = Array.isArray(pendingSession.results) ? pendingSession.results.length : 0;
+    const nextStep = Math.min(5, doneCount + 1);
+    if (dashStartBtn) {
+      dashStartBtn.innerHTML = `<span>▶ Resume Pending AI Test (Step ${nextStep} of 7)</span>`;
+    }
+    if (postVisitBtn) {
+      postVisitBtn.innerHTML = `<span>▶ Resume Pending AI Test (Step ${nextStep} of 7)</span>`;
+    }
+    if (completedList.length === 0) {
+      if (kpiScore) kpiScore.textContent = `${doneCount} / 7 Done`;
+      if (kpiOutcome) kpiOutcome.textContent = `Pending Session in MongoDB (Step ${nextStep} next)`;
+      if (kpiRetest) kpiRetest.textContent = "In Progress";
+      if (kpiRetestSub) kpiRetestSub.textContent = `Complete all 7 steps to unlock final AI analysis`;
+    }
+  } else {
+    if (dashStartBtn) {
+      dashStartBtn.innerHTML = `<span>🧠 Generate New AI Test</span>`;
+    }
+    if (postVisitBtn) {
+      postVisitBtn.innerHTML = `<span>🔄 Start AI Adaptive Post-Visit Test (7 Steps)</span>`;
+    }
+  }
+
   if (completedList.length > 0) {
     const last = completedList[completedList.length - 1];
-    if (kpiScore) kpiScore.textContent = `${Math.round(last.total_score ?? 0)} / 100`;
-    if (kpiOutcome) kpiOutcome.textContent = (last.outcome || "Completed").replace(/_/g, " ").toUpperCase();
-    if (kpiRetest) kpiRetest.textContent = "In 30 Days";
-  } else {
-    if (kpiScore) kpiScore.textContent = "—";
-    if (kpiOutcome) kpiOutcome.textContent = "Ready for first test";
-    if (kpiRetest) kpiRetest.textContent = "Due Now";
+    const scoreNum = Math.round(last.total_score ?? 0);
+    const outcomeRaw = (last.outcome || "completed").toLowerCase();
+    if (kpiScore) kpiScore.textContent = `${scoreNum} / 100`;
+    if (kpiOutcome) {
+      const modePrefix = last.session_mode === "post_visit_adaptive" ? "Post-Visit" : "Baseline";
+      kpiOutcome.textContent = `${modePrefix}: ${outcomeRaw.replace(/_/g, " ").toUpperCase()}`;
+    }
+    if (pendingSession) {
+      const doneCount = Array.isArray(pendingSession.results) ? pendingSession.results.length : 0;
+      if (kpiRetest) kpiRetest.textContent = `Pending (${doneCount}/7)`;
+      if (kpiRetestSub) kpiRetestSub.textContent = "Finish pending test in MongoDB before starting a new one";
+    } else if (outcomeRaw.includes("urgent") || outcomeRaw.includes("consult") || scoreNum < 70) {
+      if (kpiRetest) kpiRetest.textContent = "Consult Doctor";
+      if (kpiRetestSub) kpiRetestSub.textContent = "AI recommends specialist review or new follow-up test";
+    } else {
+      if (kpiRetest) kpiRetest.textContent = "Ready Anytime";
+      if (kpiRetestSub) kpiRetestSub.textContent = "No pending test — you can generate a new AI test anytime";
+    }
+  } else if (!pendingSession) {
+    if (kpiScore) kpiScore.textContent = "Not Tested";
+    if (kpiOutcome) kpiOutcome.textContent = "No completed test in MongoDB yet";
+    if (kpiRetest) kpiRetest.textContent = "Start Now";
+    if (kpiRetestSub) kpiRetestSub.textContent = "Generate your first 7-step AI cognitive screening";
   }
 
   const listEl = document.getElementById("dashSessionsList");
   if (listEl) {
-    if (!Array.isArray(sessions) || sessions.length === 0) {
+    if (safeSessions.length === 0) {
       listEl.innerHTML = `
         <div class="finding-card" style="background:var(--bg-soft);">
-          <strong>No sessions yet</strong>
-          <span>Click "🧠 Start AI Test" above to begin.</span>
+          <strong>No sessions in MongoDB yet</strong>
+          <span>Click "🧠 Generate New AI Test" above to generate and save your 7-step test.</span>
         </div>
       `;
     } else {
-      const recent = [...sessions].reverse().slice(0, 4);
+      const recent = [...safeSessions].reverse().slice(0, 5);
       listEl.innerHTML = recent
         .map((s, idx) => {
-          const dt = s.session_date ? new Date(s.session_date).toLocaleDateString() : "Recent";
-          const modeLbl = s.session_mode === "post_visit_adaptive" ? "🔄 Adaptive Follow-Up" : "🧠 AI Baseline";
+          const dt = s.session_date ? new Date(s.session_date).toLocaleDateString() : "Saved";
+          const modeLbl = s.session_mode === "post_visit_adaptive" ? "🔄 Post-Visit Adaptive" : "🧠 AI Baseline";
+          const doneCount = Array.isArray(s.results) ? s.results.length : 0;
           const statusStr = s.completed
-            ? `Score: ${Math.round(s.total_score ?? 0)}/100 · ${(s.outcome || "").replace(/_/g, " ").toUpperCase()}`
-            : `In Progress (${(s.results || []).length}/7 tests saved)`;
+            ? `Completed · Score: ${Math.round(s.total_score ?? 0)}/100 · ${(s.outcome || "").replace(/_/g, " ").toUpperCase()}`
+            : `Pending in MongoDB (${doneCount}/5 tests saved — Resume at Step ${Math.min(5, doneCount + 1)})`;
           return `
             <div class="finding-card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;">
               <div>
@@ -701,7 +973,7 @@ function renderHomePatientDashboard(person, sessions = []) {
                 <span style="display:block;font-size:12px;">${statusStr}</span>
               </div>
               <button type="button" class="mode-pill btn-dash-open-session" data-session-idx="${idx}" style="font-size:12px;padding:6px 12px;">
-                ${s.completed ? "View Report" : "Resume"}
+                ${s.completed ? "View Analysis" : `Resume (${doneCount}/7)`}
               </button>
             </div>
           `;
@@ -714,12 +986,12 @@ function renderHomePatientDashboard(person, sessions = []) {
           if (!targetSession) return;
           if (targetSession.completed) {
             currentCompletedSession = targetSession;
-            renderCompletedSessionResult(targetSession, sessions.filter((x) => x.completed));
+            renderCompletedSessionResult(targetSession, safeSessions.filter((x) => x.completed));
             switchSection("result");
           } else {
             currentSession = targetSession;
             applySessionPromptsToUI(targetSession);
-            const nextStepNum = Math.min(7, (targetSession.results || []).length + 1);
+            const nextStepNum = Math.min(5, (targetSession.results || []).length + 1);
             handleStepTransition(nextStepNum);
             switchSection("session");
           }
@@ -784,21 +1056,11 @@ function saveFormDraftToStorage() {
       medical_conditions: Array.from(document.querySelectorAll(".chk-condition:checked")).map((el) => el.value),
     };
     localStorage.setItem("yaadasht_person_draft", JSON.stringify(draft));
-  } catch {}
+  } catch (_e) { }
 }
 
 function restoreFormDraftFromStorage() {
   try {
-    const savedPersonRaw = localStorage.getItem("yaadasht_saved_person");
-    if (savedPersonRaw) {
-      const savedP = JSON.parse(savedPersonRaw);
-      if (savedP && (savedP.id || savedP.name)) {
-        currentPerson = savedP;
-        populatePersonForm(savedP);
-        renderHomePatientDashboard(savedP, []);
-        return;
-      }
-    }
     const raw = localStorage.getItem("yaadasht_person_draft");
     if (!raw) return;
     const draft = JSON.parse(raw);
@@ -809,13 +1071,21 @@ function restoreFormDraftFromStorage() {
       const emEl = document.getElementById("inpPersonEmail");
       if (emEl) emEl.value = draft.email;
     }
-  } catch {}
+  } catch (_e) { }
 }
 
 function applySessionPromptsToUI(session) {
   if (!session) return;
   const prompts = session.item_prompts || {};
   setActiveSessionPrompts(prompts);
+
+  const persistBadge = document.getElementById("sessionPersistenceBadge");
+  if (persistBadge) {
+    const doneCount = Array.isArray(session.results) ? session.results.length : 0;
+    persistBadge.textContent = session.completed
+      ? "Completed Session ✓"
+      : `Saved in MongoDB (${doneCount}/5 Done)`;
+  }
 
   const oq = prompts.orientation_questions || {};
   if (oq.day) {
@@ -851,26 +1121,75 @@ function applySessionPromptsToUI(session) {
 
   const t3Title = document.getElementById("t3CategoryTitle");
   const t3Prompt = document.getElementById("t3CategoryPrompt");
+  const stepPill3 = document.getElementById("stepPill3Text");
   if (t3Title && prompts.fluency_category) {
     t3Title.textContent = `60-Second Verbal Fluency Challenge (${prompts.fluency_category})`;
+  }
+  if (stepPill3 && prompts.fluency_category) {
+    stepPill3.textContent = `3. ${prompts.fluency_category}`;
   }
   if (t3Prompt && prompts.fluency_prompt) {
     t3Prompt.textContent = prompts.fluency_prompt;
   }
 
-  const targetTime = prompts.clock_target_time || "11:10";
-  const t5Time = document.getElementById("t5TargetTime");
-  if (t5Time) t5Time.textContent = targetTime;
-  const chkTimeLbl = document.getElementById("chkClockTargetLabel");
-  if (chkTimeLbl) chkTimeLbl.textContent = targetTime;
+  const sceneBox = document.getElementById("t4SceneVisualContainer");
+  if (sceneBox) {
+    const imgUrl = typeof prompts.picture_image_url === "string" ? prompts.picture_image_url.trim() : "";
+    const rawSvg = typeof prompts.picture_scene_svg === "string" ? prompts.picture_scene_svg.trim() : "";
+    const titleText = prompts.picture_scene_title || "AI Visual Scene";
+    if (imgUrl) {
+      sceneBox.innerHTML = `<img src="${imgUrl}" alt="${titleText}" style="width:100%;height:240px;object-fit:cover;border-radius:12px;display:block;border:1px solid #a7f3d0;" />`;
+    } else if (rawSvg.startsWith("<svg") && rawSvg.includes("</svg>")) {
+      const safeSvg = rawSvg
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, "");
+      sceneBox.innerHTML = safeSvg;
+    } else {
+      const itemsList = Array.isArray(prompts.picture_target_items) ? prompts.picture_target_items.slice(0, 8) : [];
+      sceneBox.innerHTML = `
+        <div style="padding:18px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;text-align:center;">
+          <div style="font-weight:700;color:#065f46;font-size:15px;margin-bottom:10px;">${titleText}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">
+            ${itemsList.map((it) => `<span class="word-chip" style="font-size:12px;padding:4px 10px;">${it}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    }
+  }
+  const t4Prompt = document.getElementById("t4StoryPromptText");
+  if (t4Prompt && prompts.picture_story_prompt) {
+    t4Prompt.textContent = prompts.picture_story_prompt;
+  }
 
-  if (resetDotGameFn && prompts.dot_coords) {
-    resetDotGameFn(prompts.dot_coords);
+  const t5Instr = document.getElementById("t5InstructionText");
+  if (t5Instr && (prompts.test5_instruction || prompts.test7_instruction)) {
+    t5Instr.textContent = prompts.test5_instruction || prompts.test7_instruction;
   }
 
   if (Array.isArray(session.results)) {
     for (const r of session.results) {
-      if (r.test_number === 2 && r.raw_response) {
+      if (r.test_number === 1 && r.answers) {
+        if (r.answers.day) {
+          const el = document.getElementById("t1Day");
+          if (el) el.value = r.answers.day;
+        }
+        if (r.answers.date) {
+          const el = document.getElementById("t1Date");
+          if (el) el.value = r.answers.date;
+        }
+        if (r.answers.month) {
+          const el = document.getElementById("t1Month");
+          if (el) el.value = r.answers.month;
+        }
+        if (r.answers.season) {
+          const el = document.getElementById("t1Season");
+          if (el) el.value = r.answers.season;
+        }
+        if (r.answers.city) {
+          const el = document.getElementById("t1City");
+          if (el) el.value = r.answers.city;
+        }
+      } else if (r.test_number === 2 && r.raw_response) {
         const el = document.getElementById("t2Response");
         if (el) el.value = r.raw_response;
       } else if (r.test_number === 3 && r.raw_response) {
@@ -879,8 +1198,8 @@ function applySessionPromptsToUI(session) {
       } else if (r.test_number === 4 && r.raw_response) {
         const el = document.getElementById("t4Response");
         if (el) el.value = r.raw_response;
-      } else if (r.test_number === 7 && r.raw_response) {
-        const el = document.getElementById("t7Response");
+      } else if ((r.test_number === 5 || r.test_number === 7) && r.raw_response) {
+        const el = document.getElementById("t5Response");
         if (el) el.value = r.raw_response;
       }
     }
@@ -896,7 +1215,7 @@ async function bootstrapAccountAndData() {
     if (verEl) verEl.textContent = `v${data.version}`;
     const healthDot = document.getElementById("healthDot");
     if (healthDot) healthDot.style.background = "#10b981";
-  } catch {}
+  } catch (_e) { }
 
   try {
     let authenticated = false;
@@ -904,33 +1223,34 @@ async function bootstrapAccountAndData() {
       try {
         await fetchCurrentUser();
         authenticated = true;
-      } catch {
+      } catch (_e) {
         setAuthToken(null);
       }
     }
 
     if (!authenticated) {
-      let savedEmail = localStorage.getItem("yaadasht_caregiver_email");
-      let savedPass = localStorage.getItem("yaadasht_caregiver_pass");
-      if (!savedEmail || !savedPass) {
-        const suffix = Math.floor(Math.random() * 90000 + 10000);
-        savedEmail = `caregiver_${suffix}@yaadasht.local`;
-        savedPass = "password123";
-        localStorage.setItem("yaadasht_caregiver_email", savedEmail);
-        localStorage.setItem("yaadasht_caregiver_pass", savedPass);
+      const savedEmail = localStorage.getItem("yaadasht_caregiver_email") || "";
+      if (savedEmail && savedEmail.includes("@") && !savedEmail.endsWith("@yaadasht.local")) {
+        try {
+          const res = await emailAccessUser({ email: savedEmail, mode: "login" });
+          setAuthToken(res.access_token);
+          authenticated = true;
+        } catch (_e) {
+          localStorage.removeItem("yaadasht_caregiver_email");
+        }
+      } else {
+        localStorage.removeItem("yaadasht_caregiver_email");
+        localStorage.removeItem("yaadasht_caregiver_pass");
       }
-      try {
-        const loginRes = await loginUser({ email: savedEmail, password: savedPass });
-        setAuthToken(loginRes.access_token);
-      } catch {
-        const signupRes = await signupUser({
-          email: savedEmail,
-          password: savedPass,
-          full_name: "Caregiver Account",
-          language: "en",
-        });
-        setAuthToken(signupRes.access_token);
-      }
+    }
+
+    if (!authenticated) {
+      currentPerson = null;
+      currentSession = null;
+      currentCompletedSession = null;
+      renderHomePatientDashboard(null, []);
+      await refreshDoctorsList();
+      return;
     }
 
     try {
@@ -939,9 +1259,15 @@ async function bootstrapAccountAndData() {
         currentPerson = savedPerson;
         populatePersonForm(savedPerson);
 
-        const sessions = await listSessions(savedPerson.id);
-        renderHomePatientDashboard(savedPerson, sessions || []);
-        if (Array.isArray(sessions) && sessions.length > 0) {
+        const sessions = (await listSessions(savedPerson.id)) || [];
+        let meds = [];
+        try {
+          meds = (await listMedicines(savedPerson.id)) || [];
+        } catch (_e) { }
+
+        renderHomePatientDashboard(savedPerson, sessions, meds);
+
+        if (sessions.length > 0) {
           const completedList = sessions.filter((s) => s.completed);
           const openList = sessions.filter((s) => !s.completed);
 
@@ -952,41 +1278,45 @@ async function bootstrapAccountAndData() {
           if (openList.length > 0) {
             currentSession = openList[openList.length - 1];
             applySessionPromptsToUI(currentSession);
+            currentStep = Math.min(5, (currentSession.results || []).length + 1);
           } else if (currentCompletedSession) {
-            applySessionPromptsToUI(currentCompletedSession);
+            currentSession = null;
+            currentStep = 1;
+            clearAllTestInputsForNewSession({});
           }
         }
 
-        try {
-          const meds = await listMedicines(savedPerson.id);
-          if (Array.isArray(meds) && meds.length > 0) {
-            renderConfirmedMedicines(meds, async (medId, statusVal) => {
-              const logRes = await logMedicineDose({
-                medicine_id: medId,
-                scheduled_time: "21:00",
-                status: statusVal,
-              });
-              const fb = document.getElementById("medicineLogFeedback");
-              if (fb) {
-                fb.textContent = logRes.gentle_reminder
-                  ? `Logged as ${statusVal}: ${logRes.gentle_reminder}`
-                  : `Dose marked as TAKEN ✓ (${new Date(logRes.logged_at).toLocaleTimeString()})`;
-              }
+        if (meds.length > 0) {
+          renderConfirmedMedicines(meds, async (medId, statusVal) => {
+            const logRes = await logMedicineDose({
+              medicine_id: medId,
+              scheduled_time: "21:00",
+              status: statusVal,
             });
-          }
-        } catch {}
+            const fb = document.getElementById("medicineLogFeedback");
+            if (fb) {
+              fb.textContent = logRes.gentle_reminder
+                ? `Logged as ${statusVal}: ${logRes.gentle_reminder}`
+                : `Dose marked as TAKEN ✓ (${new Date(logRes.logged_at).toLocaleTimeString()})`;
+            }
+          });
+        }
+      } else {
+        renderHomePatientDashboard(null, []);
       }
-    } catch {}
-
-    const savedStep = Number(localStorage.getItem("yaadasht_active_step") || 1);
-    if (savedStep >= 1 && savedStep <= 7) {
-      currentStep = savedStep;
+    } catch (_e) {
+      renderHomePatientDashboard(null, []);
     }
+
     renderActiveTestStep(currentStep, currentSession?.item_prompts || null);
 
     const savedSection = localStorage.getItem("yaadasht_active_section");
     if (savedSection && ["home", "session", "result", "doctors", "postvisit", "settings"].includes(savedSection)) {
-      switchSection(savedSection);
+      if (savedSection === "session" && !currentSession) {
+        switchSection("home");
+      } else {
+        switchSection(savedSection);
+      }
     }
 
     await refreshDoctorsList();
@@ -1021,7 +1351,7 @@ async function refreshDoctorsList(filterParams = {}) {
 }
 
 function clearAllTestInputsForNewSession(prompts = {}) {
-  ["t1Day", "t1Date", "t1Month", "t1Season", "t1City", "t2Response", "t3Response", "t4Response", "t7Response"].forEach(
+  ["t1Day", "t1Date", "t1Month", "t1Season", "t1City", "t2Response", "t3Response", "t4Response", "t5Response"].forEach(
     (id) => {
       const el = document.getElementById(id);
       if (el) el.value = "";
@@ -1029,96 +1359,233 @@ function clearAllTestInputsForNewSession(prompts = {}) {
   );
   const pauseEl = document.getElementById("t4PauseMs");
   if (pauseEl) pauseEl.value = "0";
+  const voiceTxt = document.getElementById("liveVoiceText");
+  if (voiceTxt) voiceTxt.textContent = 'Press "▶ Play Question" (2x repeat) or "🎙️ Record Answer" to record & transcribe your voice.';
+  const playBtn = document.getElementById("btnPlayRecordedVoice");
+  if (playBtn) playBtn.classList.add("hidden");
+  const saveInd = document.getElementById("sessionSaveIndicator");
+  if (saveInd) saveInd.textContent = "Auto-saves each test";
+  if (lastRecordedAudioUrl) {
+    URL.revokeObjectURL(lastRecordedAudioUrl);
+    lastRecordedAudioUrl = null;
+  }
+}
 
-  ["chkClockCircle", "chkClockNumbers", "chkClockOrder", "chkClockSpacing", "chkClockTwoHands", "chkClockTimeMatch"].forEach(
-    (id) => {
-      const chk = document.getElementById(id);
-      if (chk) chk.checked = false;
+let detectedExistingAccount = null;
+
+function toggleExistingUserPromptUI(existingInfo) {
+  detectedExistingAccount = existingInfo && existingInfo.exists ? existingInfo : null;
+  const alertBox = document.getElementById("existingUserDetectedBox");
+  const alertText = document.getElementById("existingUserDetectedText");
+  const extraFields = document.getElementById("newPatientExtraFieldsWrap");
+  const saveStartBtn = document.getElementById("btnSaveProfileAndStart");
+
+  if (detectedExistingAccount) {
+    if (alertBox) alertBox.classList.remove("hidden");
+    if (alertText) {
+      const pName = detectedExistingAccount.person_name || "Saved Patient";
+      const pEmail = detectedExistingAccount.email ? ` (${detectedExistingAccount.email})` : "";
+      alertText.textContent = `Welcome back! ${pName}${pEmail} is already saved in our database. No need to fill the form again — simply login below.`;
     }
-  );
+    if (extraFields) extraFields.classList.add("hidden");
+    if (saveStartBtn) saveStartBtn.classList.add("hidden");
+  } else {
+    if (alertBox) alertBox.classList.add("hidden");
+    if (extraFields) extraFields.classList.remove("hidden");
+    if (saveStartBtn) saveStartBtn.classList.remove("hidden");
+  }
+}
 
-  if (clearClockCanvasFn) clearClockCanvasFn();
-  if (resetDotGameFn) resetDotGameFn(prompts.dot_coords || null);
+async function performQuickLogin({ email = "", name = "" } = {}) {
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const cleanName = (name || "").trim();
+  if (!cleanEmail && !cleanName) {
+    alert("Please enter your registered Email or Patient Name to login.");
+    return false;
+  }
+
+  showAILoadingOverlay(true);
+  try {
+    const startMs = performance.now();
+    const res = await emailAccessUser({
+      email: cleanEmail,
+      full_name: cleanName,
+      mode: "login",
+    });
+    setAuthToken(res.access_token);
+    if (res.email) {
+      localStorage.setItem("yaadasht_caregiver_email", res.email);
+      localStorage.setItem("yaadasht_caregiver_pass", "password123");
+    }
+
+    const elapsed = performance.now() - startMs;
+    if (elapsed < 600) {
+      await new Promise((r) => setTimeout(r, 600 - elapsed));
+    }
+
+    toggleExistingUserPromptUI(null);
+
+    if (res.person && res.person.id) {
+      currentPerson = res.person;
+      populatePersonForm(res.person);
+      const sessions = (await listSessions(res.person.id)) || [];
+      let meds = [];
+      try {
+        meds = (await listMedicines(res.person.id)) || [];
+      } catch (_e) { }
+
+      const completedList = sessions.filter((s) => s.completed);
+      const openList = sessions.filter((s) => !s.completed);
+      if (completedList.length > 0) {
+        currentCompletedSession = completedList[completedList.length - 1];
+        renderCompletedSessionResult(currentCompletedSession, completedList);
+      }
+      if (openList.length > 0) {
+        currentSession = openList[openList.length - 1];
+        applySessionPromptsToUI(currentSession);
+        currentStep = Math.min(5, (currentSession.results || []).length + 1);
+      } else {
+        currentSession = null;
+        currentStep = 1;
+      }
+
+      renderHomePatientDashboard(res.person, sessions, meds);
+    } else {
+      await bootstrapAccountAndData();
+    }
+    switchSection("home");
+    return true;
+  } catch (err) {
+    if (cleanEmail && cleanEmail.includes("@")) {
+      const signupEmailInp = document.getElementById("inpPersonEmail");
+      if (signupEmailInp) signupEmailInp.value = cleanEmail;
+      setGuestAuthTabMode("signup");
+      document.getElementById("inpPersonName")?.focus();
+      alert("This email is not registered yet. Switched to Sign Up — please enter the patient profile details once to create your account.");
+    } else {
+      alert(err.message || "No account found with this email. Please switch to Sign Up to create a new account.");
+    }
+    return false;
+  } finally {
+    showAILoadingOverlay(false);
+  }
 }
 
 async function ensurePersonAndSessionReady(sessionMode = "baseline") {
-  const rawEmail = document.getElementById("inpPersonEmail")?.value.trim().toLowerCase() || "";
+  const rawEmail =
+    document.getElementById("inpPersonEmail")?.value.trim().toLowerCase() ||
+    document.getElementById("inpQuickLoginEmail")?.value.trim().toLowerCase() ||
+    localStorage.getItem("yaadasht_caregiver_email") ||
+    "";
   const rawName = document.getElementById("inpPersonName")?.value.trim() || currentPerson?.name || "";
   const rawAge = document.getElementById("inpPersonAge")?.value.trim() || String(currentPerson?.age || "");
-
-  if (!rawName || !rawAge) {
-    alert("Please enter the patient's Full Name and Age before starting the personalized test.");
-    switchSection("home");
-    document.getElementById("inpPersonName")?.focus();
-    return false;
-  }
-
-  const age = Number(rawAge);
-  const gender = document.getElementById("inpPersonGender")?.value || "male";
-  const city = document.getElementById("inpPersonCity")?.value || "Lahore";
-  const education_level = document.getElementById("inpPersonEducation")?.value || "secondary";
-  const occupation = document.getElementById("inpPersonOccupation")?.value.trim() || "retired";
-  const family_history_dementia = document.getElementById("inpFamilyHistory")?.value === "true";
-  const symptom_duration_months = Number(document.getElementById("inpSymptomDuration")?.value || 6);
-
-  const observed_symptoms = Array.from(document.querySelectorAll(".chk-symptom:checked")).map((el) => el.value);
-  const medical_conditions = Array.from(document.querySelectorAll(".chk-condition:checked")).map((el) => el.value);
-
-  const chkAudio = document.getElementById("chkConsentAudio")?.checked;
-  if (!chkAudio) {
-    alert("Please accept the consent checkbox before starting the cognitive tests.");
-    return false;
-  }
 
   const saveBtn = document.getElementById("btnSaveProfileAndStart");
   const dashBtn = document.getElementById("btnDashStartBaseline");
   const origSaveHtml = saveBtn ? saveBtn.innerHTML : "";
   const origDashHtml = dashBtn ? dashBtn.innerHTML : "";
 
-  if (saveBtn) {
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = "<span>⏳ Saving Profile &amp; Generating AI Test...</span>";
-  }
-  if (dashBtn) {
-    dashBtn.disabled = true;
-    dashBtn.innerHTML = "<span>⏳ Generating AI Test...</span>";
-  }
+  if (saveBtn) saveBtn.disabled = true;
+  if (dashBtn) dashBtn.disabled = true;
 
   const startMs = performance.now();
-  showAILoadingOverlay(true, sessionMode, rawName);
-  const s1 = document.getElementById("aiLoadStep1");
-  const s2 = document.getElementById("aiLoadStep2");
-  const s3 = document.getElementById("aiLoadStep3");
-  if (s1) s1.classList.add("active");
-  if (s2) s2.classList.remove("active");
-  if (s3) s3.classList.remove("active");
+  showAILoadingOverlay(true);
+  await new Promise((r) => setTimeout(r, 50));
 
   try {
-    // If user entered an email on the setup form and isn't already editing their active profile, check or create account by email
-    const currentEmail = localStorage.getItem("yaadasht_caregiver_email") || "";
-    if (rawEmail && rawEmail !== currentEmail.toLowerCase()) {
+    // 1. If the user is on the Guest / Setup screen or entered an email, check/authenticate with MongoDB first
+    const currentEmail = (localStorage.getItem("yaadasht_caregiver_email") || "").toLowerCase();
+    const guestViewVisible = !document.getElementById("homeGuestView")?.classList.contains("hidden");
+
+    if (!getAuthToken() || (rawEmail && rawEmail.includes("@") && rawEmail !== currentEmail)) {
+      if (!rawEmail || !rawEmail.includes("@")) {
+        showAILoadingOverlay(false);
+        alert("Please enter your Email Address so your profile and AI tests can be saved in MongoDB.");
+        document.getElementById("inpPersonEmail")?.focus();
+        return false;
+      }
       const emailRes = await emailAccessUser({
         email: rawEmail,
         mode: "register",
-        full_name: rawName,
+        full_name: rawName || rawEmail.split("@")[0],
       });
       setAuthToken(emailRes.access_token);
-      localStorage.setItem("yaadasht_caregiver_email", rawEmail);
+      localStorage.setItem("yaadasht_caregiver_email", emailRes.email || rawEmail);
       localStorage.setItem("yaadasht_caregiver_pass", "password123");
 
-      // If this email is ALREADY in the database with a saved person profile, load their existing profile & tests!
-      if (emailRes.already_registered && emailRes.person) {
+      // If this user already existed in MongoDB and was on the guest screen, log them straight into their Home Dashboard!
+      if (emailRes.already_registered && emailRes.person && guestViewVisible) {
         currentPerson = emailRes.person;
         populatePersonForm(currentPerson);
-        const existingSessions = await listSessions(currentPerson.id);
-        renderHomePatientDashboard(currentPerson, existingSessions || []);
-        alert(
-          `Welcome back! "${rawEmail}" is already registered in the database.\nYour saved profile (${currentPerson.name}) and ${existingSessions.length} test session(s) have been loaded.`
-        );
+        const existingSessions = (await listSessions(currentPerson.id)) || [];
+        let meds = [];
+        try {
+          meds = (await listMedicines(currentPerson.id)) || [];
+        } catch (_e) { }
+        const openList = existingSessions.filter((s) => !s.completed);
+        const completedList = existingSessions.filter((s) => s.completed);
+        if (completedList.length > 0) {
+          currentCompletedSession = completedList[completedList.length - 1];
+          renderCompletedSessionResult(currentCompletedSession, completedList);
+        }
+        if (openList.length > 0) {
+          currentSession = openList[openList.length - 1];
+          applySessionPromptsToUI(currentSession);
+        }
+        renderHomePatientDashboard(currentPerson, existingSessions, meds);
         switchSection("home");
         return false;
       }
     }
+
+    // 2. If we already have a logged-in person in MongoDB, check if they have a PENDING (uncompleted) session first!
+    if (currentPerson && currentPerson.id && !guestViewVisible) {
+      const existingSessions = (await listSessions(currentPerson.id)) || [];
+      const openList = existingSessions.filter((s) => !s.completed);
+      if (openList.length > 0) {
+        currentSession = openList[openList.length - 1];
+        sessionStartTimeMs = Date.now();
+        clearAllTestInputsForNewSession(currentSession.item_prompts || {});
+        applySessionPromptsToUI(currentSession);
+        const resumeStep = Math.min(5, (currentSession.results || []).length + 1);
+        currentStep = resumeStep;
+        renderActiveTestStep(resumeStep, currentSession.item_prompts || {});
+        renderHomePatientDashboard(currentPerson, existingSessions);
+        return true;
+      }
+    }
+
+    // 3. Validate patient profile fields when creating or updating profile
+    if (!rawName || !rawAge) {
+      showAILoadingOverlay(false);
+      alert("Please enter the patient's Full Name and Age before starting the personalized test.");
+      switchSection("home");
+      document.getElementById("inpPersonName")?.focus();
+      return false;
+    }
+
+    const chkAudio = document.getElementById("chkConsentAudio")?.checked;
+    if (!chkAudio) {
+      showAILoadingOverlay(false);
+      alert("Please accept the consent checkbox before starting the cognitive tests.");
+      return false;
+    }
+
+    const age = Number(rawAge);
+    const gender = document.getElementById("inpPersonGender")?.value || currentPerson?.gender || "male";
+    const city = document.getElementById("inpPersonCity")?.value || currentPerson?.city || "Lahore";
+    const education_level =
+      document.getElementById("inpPersonEducation")?.value || currentPerson?.education_level || "secondary";
+    const occupation =
+      document.getElementById("inpPersonOccupation")?.value.trim() || currentPerson?.occupation || "retired";
+    const family_history_dementia =
+      document.getElementById("inpFamilyHistory")?.value === "true" || Boolean(currentPerson?.family_history_dementia);
+    const symptom_duration_months = Number(
+      document.getElementById("inpSymptomDuration")?.value || currentPerson?.symptom_duration_months || 6
+    );
+
+    const observed_symptoms = Array.from(document.querySelectorAll(".chk-symptom:checked")).map((el) => el.value);
+    const medical_conditions = Array.from(document.querySelectorAll(".chk-condition:checked")).map((el) => el.value);
 
     currentPerson = await createOrUpdatePerson(
       {
@@ -1130,14 +1597,13 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
         occupation,
         living_situation: "with_family",
         family_history_dementia,
-        medical_conditions,
-        observed_symptoms,
+        medical_conditions: medical_conditions.length > 0 ? medical_conditions : currentPerson?.medical_conditions || [],
+        observed_symptoms: observed_symptoms.length > 0 ? observed_symptoms : currentPerson?.observed_symptoms || [],
         symptom_duration_months,
       },
       currentPerson?.id || null
     );
     saveFormDraftToStorage();
-    if (s2) s2.classList.add("active");
 
     await grantConsent(currentPerson.id, "audio");
     await grantConsent(currentPerson.id, "data_processing");
@@ -1149,24 +1615,26 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
     const onboardBadge = document.getElementById("onboardStatusBadge");
     if (onboardBadge) onboardBadge.textContent = "Saved ✓";
 
+    // 4. Start or resume session from backend (backend returns pending session if one exists, or generates a new AI 7-test session)
     currentSession = await startSession(currentPerson.id, sessionMode);
     sessionStartTimeMs = Date.now();
-    if (s3) s3.classList.add("active");
 
     const elapsed = performance.now() - startMs;
-    if (elapsed < 1100) {
-      await new Promise((r) => setTimeout(r, 1100 - elapsed));
+    if (elapsed < 600) {
+      await new Promise((r) => setTimeout(r, 600 - elapsed));
     }
 
     const prompts = currentSession.item_prompts || {};
     clearAllTestInputsForNewSession(prompts);
     applySessionPromptsToUI(currentSession);
-    renderActiveTestStep(1, prompts);
+    const nextStep = Math.min(5, (currentSession.results || []).length + 1);
+    currentStep = nextStep;
+    renderActiveTestStep(nextStep, prompts);
 
     try {
       const allSessions = await listSessions(currentPerson.id);
       renderHomePatientDashboard(currentPerson, allSessions || []);
-    } catch {
+    } catch (_e) {
       renderHomePatientDashboard(currentPerson, [currentSession]);
     }
 
@@ -1181,7 +1649,7 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
     }
     if (dashBtn) {
       dashBtn.disabled = false;
-      dashBtn.innerHTML = origDashHtml || "<span>🧠 Start AI Test</span>";
+      if (origDashHtml) dashBtn.innerHTML = origDashHtml;
     }
     showAILoadingOverlay(false);
   }
@@ -1353,9 +1821,9 @@ async function saveCurrentStepResult(stepNum) {
   } else if (stepNum === 3) {
     payload = {
       test_number: 3,
-      test_type: "verbal_fluency_animals",
+      test_type: "animal_naming",
       raw_response: document.getElementById("t3Response")?.value || "",
-      duration_seconds: 60.0,
+      timing: { duration_seconds: 60.0 },
       audio_path: `audio/${currentSession.id}_test3.webm`,
     };
   } else if (stepNum === 4) {
@@ -1364,17 +1832,23 @@ async function saveCurrentStepResult(stepNum) {
     let aiMarkers = [];
     try {
       if (descText.trim()) {
-        const aiStory = await evaluatePictureStoryAI(descText);
+        const sceneTitle = currentSession?.item_prompts?.picture_scene_title || "";
+        const targetItems = currentSession?.item_prompts?.picture_target_items || [];
+        const aiStory = await evaluatePictureStoryAI(descText, sceneTitle, targetItems);
         if (aiStory && Array.isArray(aiStory.clinical_markers)) {
           aiMarkers = aiStory.clinical_markers;
         }
       }
-    } catch {}
+    } catch (_e) { }
 
     payload = {
       test_number: 4,
       test_type: "picture_story",
       raw_response: descText,
+      timing: {
+        pause_ms: pauseMs,
+        ai_markers: aiMarkers,
+      },
       answers: {
         pause_ms: pauseMs,
         ai_markers: aiMarkers,
@@ -1384,41 +1858,26 @@ async function saveCurrentStepResult(stepNum) {
   } else if (stepNum === 5) {
     payload = {
       test_number: 5,
-      test_type: "clock_drawing",
-      answers: {
-        checklist: {
-          closed_circle: Boolean(document.getElementById("chkClockCircle")?.checked),
-          twelve_numbers: Boolean(document.getElementById("chkClockNumbers")?.checked),
-          correct_order: Boolean(document.getElementById("chkClockOrder")?.checked),
-          correct_spacing: Boolean(document.getElementById("chkClockSpacing")?.checked),
-          two_hands: Boolean(document.getElementById("chkClockTwoHands")?.checked),
-          hands_match_time: Boolean(document.getElementById("chkClockTimeMatch")?.checked),
-        },
-      },
-      stroke_data: { strokes: clockStrokes },
-      drawing_path: `drawings/${currentSession.id}_clock.png`,
-    };
-  } else if (stepNum === 6) {
-    const connectedDotsCount = Math.min(12, dotNextExpected - 1);
-    payload = {
-      test_number: 6,
-      test_type: "dot_connecting",
-      answers: {
-        connected_dots: connectedDotsCount,
-        errors: dotErrors,
-      },
-      duration_seconds: dotDurationSec || 42.0,
-    };
-  } else if (stepNum === 7) {
-    payload = {
-      test_number: 7,
       test_type: "word_recall_delayed",
-      raw_response: document.getElementById("t7Response")?.value || "",
-      audio_path: `audio/${currentSession.id}_test7.webm`,
+      raw_response: document.getElementById("t5Response")?.value || "",
+      audio_path: `audio/${currentSession.id}_test5.webm`,
     };
   }
 
   const res = await submitTestResult(currentSession.id, payload);
+  if (currentSession) {
+    if (!Array.isArray(currentSession.results)) currentSession.results = [];
+    const existingIdx = currentSession.results.findIndex((r) => r.test_number === stepNum);
+    if (existingIdx >= 0) {
+      currentSession.results[existingIdx] = res;
+    } else {
+      currentSession.results.push(res);
+    }
+    const persistBadge = document.getElementById("sessionPersistenceBadge");
+    if (persistBadge) {
+      persistBadge.textContent = `Saved in MongoDB (${currentSession.results.length}/5 Done)`;
+    }
+  }
   const indicator = document.getElementById("sessionSaveIndicator");
   if (indicator) indicator.textContent = `Test ${stepNum} Saved (${res.score}/100) ✓`;
 
@@ -1511,49 +1970,93 @@ function initEventListeners() {
     chk.addEventListener("change", saveFormDraftToStorage);
   });
 
-  // Quick Email Login for Returning Users (Loads Saved Profile & Tests from MongoDB)
-  document.getElementById("btnQuickEmailLogin")?.addEventListener("click", async () => {
+  // Live Database Check: If user types an Email or Name that already exists in MongoDB, show "Simply Login"
+  let checkUserDebounceTimer = null;
+  const triggerExistingUserCheck = () => {
+    clearTimeout(checkUserDebounceTimer);
+    checkUserDebounceTimer = setTimeout(async () => {
+      if (currentPerson && currentPerson.id) return;
+      const emailVal = document.getElementById("inpPersonEmail")?.value.trim().toLowerCase() || "";
+      const nameVal = document.getElementById("inpPersonName")?.value.trim() || "";
+      if ((emailVal && emailVal.includes("@") && emailVal.includes(".")) || nameVal.length >= 3) {
+        try {
+          const checkRes = await checkExistingUser({ email: emailVal, name: nameVal });
+          toggleExistingUserPromptUI(checkRes);
+        } catch (_e) { }
+      } else {
+        toggleExistingUserPromptUI(null);
+      }
+    }, 350);
+  };
+
+  document.getElementById("inpPersonEmail")?.addEventListener("input", triggerExistingUserCheck);
+  document.getElementById("inpPersonName")?.addEventListener("input", triggerExistingUserCheck);
+
+  document.getElementById("btnLoginDetectedUser")?.addEventListener("click", async () => {
+    const emailToUse =
+      detectedExistingAccount?.email ||
+      document.getElementById("inpPersonEmail")?.value.trim().toLowerCase() ||
+      "";
+    const nameToUse =
+      detectedExistingAccount?.person_name ||
+      document.getElementById("inpPersonName")?.value.trim() ||
+      "";
+    await performQuickLogin({ email: emailToUse, name: nameToUse });
+  });
+
+  document.getElementById("btnDismissExistingPrompt")?.addEventListener("click", () => {
+    toggleExistingUserPromptUI(null);
+  });
+
+  // Tab Switcher on Home Card: Show ONLY Login OR Sign Up at a time
+  document.getElementById("btnTabLogin")?.addEventListener("click", () => {
+    setGuestAuthTabMode("login");
+    document.getElementById("inpQuickLoginEmail")?.focus();
+  });
+  document.getElementById("btnTabSignup")?.addEventListener("click", () => {
+    setGuestAuthTabMode("signup");
+    document.getElementById("inpPersonEmail")?.focus();
+  });
+  document.getElementById("btnSwitchToSignupLink")?.addEventListener("click", () => {
+    const loginEmail = document.getElementById("inpQuickLoginEmail")?.value.trim() || "";
+    const signupEmailInp = document.getElementById("inpPersonEmail");
+    if (loginEmail && signupEmailInp && !signupEmailInp.value) {
+      signupEmailInp.value = loginEmail;
+    }
+    setGuestAuthTabMode("signup");
+    document.getElementById("inpPersonEmail")?.focus();
+  });
+  document.getElementById("btnSwitchToLoginLink")?.addEventListener("click", () => {
+    const signupEmail = document.getElementById("inpPersonEmail")?.value.trim() || "";
+    const loginEmailInp = document.getElementById("inpQuickLoginEmail");
+    if (signupEmail && loginEmailInp && !loginEmailInp.value) {
+      loginEmailInp.value = signupEmail;
+    }
+    setGuestAuthTabMode("login");
+    document.getElementById("inpQuickLoginEmail")?.focus();
+  });
+
+  // Quick Email Login for Returning Users (Loads Saved Profile & Tests from Database)
+  const triggerQuickEmailLogin = async () => {
     const email = document.getElementById("inpQuickLoginEmail")?.value.trim().toLowerCase() || "";
-    if (!email || !email.includes("@")) {
+    if (!email) {
       alert("Please enter your registered email address to login.");
       document.getElementById("inpQuickLoginEmail")?.focus();
       return;
     }
     const btn = document.getElementById("btnQuickEmailLogin");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "⏳ Loading...";
-    }
-    showAILoadingOverlay(true, "baseline", email.split("@")[0]);
+    if (btn) btn.disabled = true;
     try {
-      const startMs = performance.now();
-      const res = await emailAccessUser({ email, mode: "login" });
-      setAuthToken(res.access_token);
-      localStorage.setItem("yaadasht_caregiver_email", email);
-      localStorage.setItem("yaadasht_caregiver_pass", "password123");
-
-      const elapsed = performance.now() - startMs;
-      if (elapsed < 900) {
-        await new Promise((r) => setTimeout(r, 900 - elapsed));
-      }
-
-      if (res.person && res.person.id) {
-        currentPerson = res.person;
-        populatePersonForm(res.person);
-        const sessions = await listSessions(res.person.id);
-        renderHomePatientDashboard(res.person, sessions || []);
-      } else {
-        await bootstrapAccountAndData();
-      }
-      switchSection("home");
-    } catch (err) {
-      alert(err.message || "No account found with this email. Please fill the New Patient Setup form below.");
+      await performQuickLogin({ email });
     } finally {
-      showAILoadingOverlay(false);
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = "Login &rarr;";
-      }
+      if (btn) btn.disabled = false;
+    }
+  };
+  document.getElementById("btnQuickEmailLogin")?.addEventListener("click", triggerQuickEmailLogin);
+  document.getElementById("inpQuickLoginEmail")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      triggerQuickEmailLogin();
     }
   });
 
@@ -1565,7 +2068,8 @@ function initEventListeners() {
         const rawName = document.getElementById("inpPersonName")?.value.trim() || currentPerson?.name || "";
         const rawAge = document.getElementById("inpPersonAge")?.value.trim() || String(currentPerson?.age || "");
         if (rawName && rawAge) {
-          await ensurePersonAndSessionReady("baseline");
+          const ok = await ensurePersonAndSessionReady("baseline");
+          if (!ok) return;
         }
       }
       switchSection(targetSec);
@@ -1617,22 +2121,37 @@ function initEventListeners() {
     const chips = Array.from(document.querySelectorAll("#t2WordChips .word-chip"))
       .map((c) => c.textContent.trim())
       .join(". ");
-    const textToSpeak = chips || "Garden. Kettle. Mirror. Bangle. Pillow.";
-    speakInstruction(2, `Listen carefully to these five words: ${textToSpeak}`);
+    if (!chips) return;
+    speakInstruction(2, `Listen carefully to these five words: ${chips}`);
   });
 
   document.getElementById("btnDismissSafety")?.addEventListener("click", () => {
     document.getElementById("safetyBanner")?.classList.add("hidden");
   });
 
-  // Start Personalized Baseline 7-Test Session from Home
+  // Start or Resume Personalized Baseline 7-Test Session from Home
   const startBaselineFlow = async () => {
     const ok = await ensurePersonAndSessionReady("baseline");
     if (!ok) return;
-    handleStepTransition(1);
+    const nextStep = Math.min(5, (currentSession?.results?.length || 0) + 1);
+    handleStepTransition(nextStep);
     switchSection("session");
   };
-  document.getElementById("btnQuickStartSession")?.addEventListener("click", startBaselineFlow);
+  // Hero "Start 7 Guided Tests" button: If not logged in yet, switch to Sign Up tab or start if fields filled
+  document.getElementById("btnQuickStartSession")?.addEventListener("click", async () => {
+    if (currentPerson && currentPerson.id) {
+      await startBaselineFlow();
+      return;
+    }
+    const rawName = document.getElementById("inpPersonName")?.value.trim() || "";
+    const rawAge = document.getElementById("inpPersonAge")?.value.trim() || "";
+    if (rawName && rawAge) {
+      await startBaselineFlow();
+    } else {
+      setGuestAuthTabMode("signup");
+      document.getElementById("inpPersonEmail")?.focus();
+    }
+  });
   document.getElementById("btnSaveProfileAndStart")?.addEventListener("click", startBaselineFlow);
   document.getElementById("btnDashStartBaseline")?.addEventListener("click", startBaselineFlow);
 
@@ -1648,12 +2167,17 @@ function initEventListeners() {
       guestView.classList.remove("hidden");
       guestView.style.display = "";
     }
-    document.getElementById("returningUserLoginBox")?.classList.add("hidden");
-    document.getElementById("btnCancelEditProfile")?.classList.remove("hidden");
+    setGuestAuthTabMode("edit");
   });
-  document.getElementById("btnCancelEditProfile")?.addEventListener("click", () => {
+  document.getElementById("btnCancelEditProfile")?.addEventListener("click", async () => {
     if (currentPerson && (currentPerson.id || currentPerson.name)) {
-      renderHomePatientDashboard(currentPerson, []);
+      let sessions = [];
+      let meds = [];
+      try {
+        sessions = (await listSessions(currentPerson.id)) || [];
+        meds = (await listMedicines(currentPerson.id)) || [];
+      } catch (_e) { }
+      renderHomePatientDashboard(currentPerson, sessions, meds);
     }
   });
 
@@ -1672,6 +2196,7 @@ function initEventListeners() {
     currentSession = null;
     currentCompletedSession = null;
     currentReport = null;
+    toggleExistingUserPromptUI(null);
 
     ["inpPersonEmail", "inpPersonName", "inpPersonAge", "inpPersonOccupation", "inpQuickLoginEmail"].forEach((id) => {
       const el = document.getElementById(id);
@@ -1681,114 +2206,24 @@ function initEventListeners() {
       chk.checked = false;
     });
 
-    document.getElementById("returningUserLoginBox")?.classList.remove("hidden");
     const badge = document.getElementById("activePersonBadge");
-    if (badge) badge.textContent = "Sign In";
+    if (badge) badge.textContent = "Login / Sign Up";
     const onboardBadge = document.getElementById("onboardStatusBadge");
     if (onboardBadge) onboardBadge.textContent = "AI Personalized";
 
     renderHomePatientDashboard(null, []);
     switchSection("home");
-
-    try {
-      const suffix = Math.floor(Math.random() * 90000 + 10000);
-      const guestEmail = `caregiver_${suffix}@yaadasht.local`;
-      const guestPass = "password123";
-      localStorage.setItem("yaadasht_caregiver_email", guestEmail);
-      localStorage.setItem("yaadasht_caregiver_pass", guestPass);
-      const signupRes = await signupUser({
-        email: guestEmail,
-        password: guestPass,
-        full_name: "Caregiver Account",
-        language: "en",
-      });
-      setAuthToken(signupRes.access_token);
-    } catch {}
   };
 
   document.getElementById("btnHeaderLogout")?.addEventListener("click", handleLogout);
   document.getElementById("btnLogoutProfile")?.addEventListener("click", handleLogout);
 
-  // Clean Account Login / Register Modal Controls
-  const openAuthModal = () => {
-    const emailInp = document.getElementById("inpAuthEmail");
-    const savedEmail = localStorage.getItem("yaadasht_caregiver_email") || "";
-    if (emailInp && !emailInp.value && !savedEmail.endsWith("@yaadasht.local")) {
-      emailInp.value = savedEmail;
-    }
-    document.getElementById("authModalBackdrop")?.classList.remove("hidden");
-  };
-  document.getElementById("btnOpenAuthModal")?.addEventListener("click", openAuthModal);
-  document.getElementById("btnCloseAuthModal")?.addEventListener("click", () => {
-    document.getElementById("authModalBackdrop")?.classList.add("hidden");
-  });
-
-  const handleAuthSubmit = async (mode) => {
-    const email = document.getElementById("inpAuthEmail")?.value.trim().toLowerCase() || "";
-    const password = document.getElementById("inpAuthPassword")?.value || "password123";
-    if (!email || !email.includes("@")) {
-      alert("Please enter a valid email address.");
-      return;
-    }
-    const loginBtn = document.getElementById("btnSubmitLogin");
-    const signupBtn = document.getElementById("btnSubmitSignup");
-    if (loginBtn) {
-      loginBtn.disabled = true;
-      loginBtn.textContent = mode === "login" ? "⏳ Signing In..." : "Sign In";
-    }
-    if (signupBtn) {
-      signupBtn.disabled = true;
-      signupBtn.textContent = mode === "signup" ? "⏳ Creating..." : "Create Account";
-    }
-    try {
-      const res = await emailAccessUser({ email, mode: mode === "login" ? "login" : "register" });
-      setAuthToken(res.access_token);
-      localStorage.setItem("yaadasht_caregiver_email", email);
-      localStorage.setItem("yaadasht_caregiver_pass", password);
-      localStorage.removeItem("yaadasht_person_draft");
-      currentPerson = null;
-      currentSession = null;
-      currentCompletedSession = null;
-      document.getElementById("authModalBackdrop")?.classList.add("hidden");
-      showAILoadingOverlay(true, "baseline", email.split("@")[0]);
-      try {
-        await bootstrapAccountAndData();
-      } finally {
-        showAILoadingOverlay(false);
-      }
-      if (!currentPerson) {
-        renderHomePatientDashboard(null, []);
-        const badge = document.getElementById("activePersonBadge");
-        if (badge) badge.textContent = email.split("@")[0];
-      }
-    } catch (err) {
-      alert(err.message || "Authentication failed. Please check your email.");
-    } finally {
-      if (loginBtn) {
-        loginBtn.disabled = false;
-        loginBtn.textContent = "Sign In";
-      }
-      if (signupBtn) {
-        signupBtn.disabled = false;
-        signupBtn.textContent = "Create Account";
-      }
-    }
-  };
-  document.getElementById("btnSubmitLogin")?.addEventListener("click", () => handleAuthSubmit("login"));
-  document.getElementById("btnSubmitSignup")?.addEventListener("click", () => handleAuthSubmit("signup"));
-
-  // Standalone New Test Button inside the 7 Tests screen
-  document.getElementById("btnRegenerateAISession")?.addEventListener("click", async () => {
-    const btn = document.getElementById("btnRegenerateAISession");
-    if (btn) btn.textContent = "⏳ Generating...";
-    try {
-      const mode = currentSession?.session_mode || "baseline";
-      const ok = await ensurePersonAndSessionReady(mode);
-      if (ok) {
-        handleStepTransition(currentStep);
-      }
-    } finally {
-      if (btn) btn.textContent = "🔄 New Test";
+  // Header Account Button: If logged in, go to Home Hub; if logged out, go to Home Login Tab
+  document.getElementById("btnOpenAuthModal")?.addEventListener("click", () => {
+    switchSection("home");
+    if (!currentPerson || !currentPerson.id) {
+      setGuestAuthTabMode("login");
+      document.getElementById("inpQuickLoginEmail")?.focus();
     }
   });
 
@@ -1803,15 +2238,15 @@ function initEventListeners() {
     playbackAudioObj.play().catch((err) => console.warn("Audio playback error:", err));
   });
 
-  // Start Post-Visit AI Adaptive Follow-Up Session
+  // Start or Resume Post-Visit AI Adaptive Follow-Up Session
   const startAdaptiveFlow = async () => {
     const ok = await ensurePersonAndSessionReady("post_visit_adaptive");
     if (!ok) return;
-    handleStepTransition(1);
+    const nextStep = Math.min(5, (currentSession?.results?.length || 0) + 1);
+    handleStepTransition(nextStep);
     switchSection("session");
   };
   document.getElementById("btnStartAdaptiveFollowupTest")?.addEventListener("click", startAdaptiveFlow);
-  document.getElementById("btnDashStartAdaptive")?.addEventListener("click", startAdaptiveFlow);
 
   document.querySelectorAll("#testProgressDots .step-pill").forEach((pill) => {
     pill.addEventListener("click", () => {
@@ -1852,16 +2287,13 @@ function initEventListeners() {
   let t3Interval = null;
   document.getElementById("btnStartT3Timer")?.addEventListener("click", () => {
     clearInterval(t3Interval);
+    stopQuestionAudio();
     let rem = 60;
     const disp = document.getElementById("t3TimerDisplay");
     if (disp) disp.textContent = "60s";
 
     activeMicField = "t3Response";
     toggleSpeechRecognition("t3Response");
-
-    if (voiceGuideActive) {
-      speakInstruction(3, "60 seconds started. Please begin speaking now.");
-    }
 
     t3Interval = setInterval(() => {
       rem -= 1;
@@ -1886,29 +2318,11 @@ function initEventListeners() {
       }
       const canvas = document.getElementById("clockCanvas");
       const dataUri = canvas ? canvas.toDataURL("image/png") : "";
-      const targetTime = currentSession?.item_prompts?.clock_target_time || "11:10";
+      const targetTime = currentSession?.item_prompts?.clock_target_time || "";
 
-      let chk = null;
-      let observations = "";
-      try {
-        if (dataUri) {
-          const aiRes = await evaluateClockVisionAI(dataUri, targetTime, { strokes: clockStrokes });
-          if (aiRes && aiRes.checklist) {
-            chk = aiRes.checklist;
-            observations = aiRes.observations || "";
-          }
-        }
-      } catch (e) {
-        console.warn("AI vision fallback:", e);
-      }
-
-      if (!chk) {
-        const res = await runClockCheck(currentSession.id, {
-          target_time: targetTime,
-          stroke_data: { strokes: clockStrokes },
-        });
-        chk = res.checklist;
-      }
+      const aiRes = await evaluateClockVisionAI(dataUri, targetTime, { strokes: clockStrokes });
+      const chk = aiRes.checklist || {};
+      const observations = aiRes.observations || "";
 
       const c1 = document.getElementById("chkClockCircle");
       if (c1) c1.checked = !!chk.closed_circle;
@@ -1940,18 +2354,35 @@ function initEventListeners() {
       const saved = await saveCurrentStepResult(currentStep);
       if (!saved) return;
 
-      if (currentStep < 7) {
+      if (currentStep < 5) {
         handleStepTransition(currentStep + 1);
       } else {
-        const elapsedSessionSec = Math.max(60, Math.round((Date.now() - sessionStartTimeMs) / 1000));
-        currentCompletedSession = await completeSession(currentSession.id, elapsedSessionSec);
-        currentReport = null;
-        const allSessions = await listSessions(currentPerson.id);
-        renderCompletedSessionResult(currentCompletedSession, allSessions);
-        renderHomePatientDashboard(currentPerson, allSessions);
-        switchSection("result");
-        if (voiceGuideActive) {
-          speakInstruction(7, "All seven cognitive tests completed. Your plain-language screening outcome is ready.");
+        showAILoadingOverlay(true);
+        try {
+          const elapsedSessionSec = Math.max(60, Math.round((Date.now() - sessionStartTimeMs) / 1000));
+          currentCompletedSession = await completeSession(currentSession.id, elapsedSessionSec);
+          currentSession = null;
+          currentReport = null;
+          currentStep = 1;
+          clearAllTestInputsForNewSession({});
+          const persistBadge = document.getElementById("sessionPersistenceBadge");
+          if (persistBadge) persistBadge.textContent = "Session Completed ✓";
+          const allSessions = (await listSessions(currentPerson.id)) || [];
+          let meds = [];
+          try {
+            meds = (await listMedicines(currentPerson.id)) || [];
+          } catch (_e) { }
+          renderCompletedSessionResult(
+            currentCompletedSession,
+            allSessions.filter((s) => s.completed)
+          );
+          renderHomePatientDashboard(currentPerson, allSessions, meds);
+          switchSection("result");
+          if (voiceGuideActive) {
+            speakInstruction(5, "All five cognitive tests completed. Your screening outcome is ready.");
+          }
+        } finally {
+          showAILoadingOverlay(false);
         }
       }
     } catch (err) {
@@ -2082,7 +2513,9 @@ function initEventListeners() {
 
   const refreshMeds = async () => {
     if (!currentPerson) return;
-    const meds = await listMedicines(currentPerson.id);
+    const meds = (await listMedicines(currentPerson.id)) || [];
+    const sessions = (await listSessions(currentPerson.id)) || [];
+    renderHomePatientDashboard(currentPerson, sessions, meds);
     renderConfirmedMedicines(meds, async (medId, statusVal) => {
       const logRes = await logMedicineDose({
         medicine_id: medId,

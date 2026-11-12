@@ -30,11 +30,17 @@ async function apiRequest(path, { method = "GET", body = null } = {}) {
   });
 
   if (!response.ok) {
-    let errDetail = `Request failed (${response.status})`;
+    let errDetail = "Something went wrong. Please try again.";
     try {
       const errJson = await response.json();
-      if (errJson.detail) {
-        errDetail = typeof errJson.detail === "string" ? errJson.detail : JSON.stringify(errJson.detail);
+      if (typeof errJson.detail === "string" && errJson.detail.trim()) {
+        errDetail = errJson.detail.trim();
+      } else if (Array.isArray(errJson.detail) && errJson.detail.length > 0) {
+        const firstErr = errJson.detail[0];
+        const fieldName = Array.isArray(firstErr.loc)
+          ? String(firstErr.loc[firstErr.loc.length - 1]).replace(/_/g, " ")
+          : "input";
+        errDetail = `Please check your ${fieldName} and try again.`;
       }
     } catch {
       // Ignore parse error
@@ -69,6 +75,13 @@ export async function emailAccessUser({ email, mode = "login", full_name = "Care
   return apiRequest("/auth/email-access", {
     method: "POST",
     body: { email, mode, full_name },
+  });
+}
+
+export async function checkExistingUser({ email = "", name = "" }) {
+  return apiRequest("/auth/check-existing", {
+    method: "POST",
+    body: { email, name },
   });
 }
 
@@ -242,10 +255,14 @@ export async function fetchAIStatus() {
   return apiRequest("/ai/status");
 }
 
-export async function evaluatePictureStoryAI(description) {
+export async function evaluatePictureStoryAI(description, sceneTitle = "", targetItems = []) {
   return apiRequest("/ai/picture-story", {
     method: "POST",
-    body: { description },
+    body: {
+      description,
+      scene_title: sceneTitle,
+      target_items: Array.isArray(targetItems) ? targetItems : [],
+    },
   });
 }
 
@@ -264,6 +281,13 @@ export async function extractPrescriptionAI(prescriptionText, imageDataUri = nul
   return apiRequest("/ai/extract-prescription", {
     method: "POST",
     body: { prescription_text: prescriptionText, image_data_uri: imageDataUri },
+  });
+}
+
+export async function ensureMicReady() {
+  return apiRequest("/ai/ensure-mic-ready", {
+    method: "POST",
+    auth: false,
   });
 }
 

@@ -11,8 +11,17 @@ from backend.app.db.repository import db
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def create_access_token(user_id: str, role: str = "caregiver") -> str:
+def create_access_token(
+    user_id: str,
+    role: str = "caregiver",
+    email: str = "",
+    full_name: str = "",
+) -> str:
     payload = {"sub": user_id, "role": "caregiver"}
+    if email:
+        payload["email"] = email.strip().lower()
+    if full_name:
+        payload["full_name"] = full_name.strip()
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     b64_payload = base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
     sig = hmac.new(
@@ -75,6 +84,20 @@ def get_current_user(
             detail="Token missing subject claim.",
         )
     profile = db.get_profile(user_id)
+    if not profile and claims.get("email"):
+        from backend.app.db.repository import utc_now_iso
+
+        restored = {
+            "id": user_id,
+            "email": claims["email"],
+            "full_name": claims.get("full_name") or claims["email"].split("@")[0],
+            "language": "en",
+            "role": "caregiver",
+            "push_token": None,
+            "created_at": utc_now_iso(),
+        }
+        db.profiles[user_id] = restored
+        profile = restored
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

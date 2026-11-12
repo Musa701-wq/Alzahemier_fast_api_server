@@ -136,6 +136,7 @@ class TestResultSubmit(BaseModel):
         "orientation",
         "word_recall_immediate",
         "animal_naming",
+        "verbal_fluency_animals",
         "picture_story",
         "clock_drawing",
         "dot_connecting",

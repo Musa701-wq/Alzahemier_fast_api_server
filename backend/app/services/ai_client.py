@@ -1,113 +1,39 @@
 import hashlib
 import json
 import logging
+from pathlib import Path
 import random
 import re
-import sys
+import uuid
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+from fastapi import HTTPException, status
 from openai import OpenAI
 from backend.app.core.config import settings
-from backend.app.services.clock_check import clock_vision_provider
 
 logger = logging.getLogger("yaadasht.ai")
+SCENE_IMAGES_DIR = Path(__file__).resolve().parents[3] / "uploads" / "scene_images"
+SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-ORIENTATION_QUESTION_VARIATIONS: List[Dict[str, str]] = [
-    {
-        "day": "1. Could you tell me what day of the week it is today?",
-        "date": "2. What is today's calendar date (number of the month)?",
-        "month": "3. Which month of the year are we currently in?",
-        "season": "4. Which season or weather period is it right now?",
-        "city": "5. Which city are you currently located in?",
-        "instruction": "Let's start with 5 personalized orientation questions about today's time, date, and your city.",
-    },
-    {
-        "day": "1. Without checking a calendar, what day of the week is today?",
-        "date": "2. What date of the month is today?",
-        "month": "3. Can you name the current month?",
-        "season": "4. What season of the year are we experiencing right now?",
-        "city": "5. What is the name of the city where we are taking this test?",
-        "instruction": "Please answer these 5 orientation questions in your own words (by voice or keyboard).",
-    },
-    {
-        "day": "1. What day of the week is it right now?",
-        "date": "2. Which number date of the month is today?",
-        "month": "3. Which month is going on currently?",
-        "season": "4. What is the current season (Winter, Spring, Summer, or Autumn)?",
-        "city": "5. Which city are you in at this moment?",
-        "instruction": "We will begin by checking orientation to today's day, date, month, season, and place.",
-    },
-]
 
-# Curated culturally familiar word pools so no two sessions ever repeat the same 5 words
-WORD_POOLS: List[List[str]] = [
-    ["river", "mango", "window", "lantern", "carpet"],
-    ["garden", "kettle", "mirror", "bangle", "pillow"],
-    ["mosque", "orange", "ladder", "blanket", "basket"],
-    ["market", "apple", "curtain", "candle", "sandal"],
-    ["bridge", "banana", "clock", "bottle", "notebook"],
-    ["fountain", "almond", "umbrella", "pitcher", "scarf"],
-    ["courtyard", "guava", "spectacles", "teacup", "wallet"],
-    ["veranda", "pomegranate", "keychain", "cushion", "newspaper"],
-]
-
-CLOCK_TARGET_TIMES: List[str] = [
-    "11:10",
-    "02:45",
-    "08:20",
-    "04:50",
-    "10:10",
-    "01:50",
-    "07:15",
-    "09:35",
-]
-
-FLUENCY_CATEGORIES: List[Dict[str, Any]] = [
-    {
-        "category": "Animals",
-        "prompt": "Name as many different animals (land, water, or birds) as you can in 60 seconds.",
-        "valid_items": [
-            "cat", "dog", "cow", "buffalo", "goat", "sheep", "horse", "donkey", "camel",
-            "lion", "tiger", "elephant", "monkey", "deer", "bear", "wolf", "fox", "rabbit",
-            "mouse", "rat", "squirrel", "snake", "frog", "fish", "turtle", "crocodile",
-            "sparrow", "crow", "pigeon", "parrot", "peacock", "eagle", "hen", "rooster", "duck", "zebra", "giraffe",
-        ],
-    },
-    {
-        "category": "Fruits, Vegetables & Animals",
-        "prompt": "Name as many different animals, fruits, or vegetables as you can in 60 seconds.",
-        "valid_items": [
-            "mango", "apple", "banana", "orange", "guava", "pomegranate", "grapes", "melon", "watermelon",
-            "peach", "pear", "plum", "apricot", "dates", "fig", "lemon", "papaya", "potato", "tomato",
-            "onion", "garlic", "ginger", "spinach", "carrot", "radish", "cabbage", "cauliflower", "peas",
-            "okra", "eggplant", "cucumber", "cat", "dog", "cow", "goat", "horse", "lion", "tiger", "elephant",
-        ],
-    },
-    {
-        "category": "Household & Kitchen Items or Animals",
-        "prompt": "Name as many household/kitchen items or animals as you can in 60 seconds.",
-        "valid_items": [
-            "cup", "plate", "spoon", "fork", "knife", "kettle", "teapot", "glass", "bowl", "pan", "pot",
-            "stove", "oven", "fridge", "table", "chair", "bed", "charpoy", "pillow", "blanket", "carpet",
-            "curtain", "lamp", "lantern", "fan", "clock", "mirror", "bucket", "broom", "towel",
-            "cat", "dog", "cow", "goat", "horse", "lion", "tiger", "elephant", "sparrow", "pigeon",
-        ],
-    },
-]
-
-SCENE_VARIATIONS: List[Dict[str, Any]] = [
-    {
-        "scene_id": "courtyard_tea_scene",
-        "title": "Morning Courtyard Tea Scene",
-        "prompt": "Look closely at the courtyard illustration and describe everything you see: the people, objects, animals, and actions taking place.",
-        "target_items": ["courtyard", "tree", "sparrow", "bird", "charpoy", "bed", "grandmother", "woman", "teapot", "tea", "cup", "child", "boy", "book", "reading", "sun"],
-    },
-    {
-        "scene_id": "family_morning_garden",
-        "title": "Family Courtyard & Garden Activity",
-        "prompt": "Describe this scene in detail: tell us who is sitting, what they are holding, what the child is doing, and what is in the background.",
-        "target_items": ["courtyard", "tree", "branch", "sparrow", "bird", "charpoy", "grandmother", "elder", "teapot", "kettle", "cup", "child", "book", "sun", "morning"],
-    },
-]
+def _generate_and_save_scene_image(image_prompt: str, seed: int) -> str:
+    """
+    Generates a real AI illustration image from the AI-written scene prompt and saves it locally.
+    """
+    clean_prompt = (image_prompt or "warm realistic illustration of everyday family life").strip()
+    url = (
+        f"https://image.pollinations.ai/prompt/{quote(clean_prompt)}"
+        f"?width=640&height=360&nologo=true&seed={abs(int(seed)) % 999999}"
+    )
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=25) as resp:
+        img_bytes = resp.read()
+    if not img_bytes or len(img_bytes) < 1000:
+        raise ValueError("Generated scene image was empty.")
+    filename = f"scene_{uuid.uuid4().hex[:12]}.jpg"
+    (SCENE_IMAGES_DIR / filename).write_bytes(img_bytes)
+    return f"/scene-images/{filename}"
 
 
 def _extract_json_dict(raw_text: str) -> Dict[str, Any]:
@@ -128,10 +54,13 @@ def _extract_json_dict(raw_text: str) -> Dict[str, Any]:
         return {}
 
 
-def get_openrouter_client() -> Optional[OpenAI]:
+def get_openrouter_client() -> OpenAI:
     api_key = settings.OPENROUTER_API_KEY.strip()
     if not api_key or api_key == "your_openrouter_api_key_here":
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OpenRouter API key is not configured.",
+        )
     return OpenAI(
         base_url=settings.OPENROUTER_BASE_URL,
         api_key=api_key,
@@ -173,79 +102,32 @@ def generate_personalized_test_battery(
     previous_words: List[str],
     session_index: int = 0,
     use_ai_online: bool = True,
+    previous_categories: Optional[List[str]] = None,
+    previous_scenes: Optional[List[str]] = None,
+    previous_clock_times: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Generates a personalized 7-test cognitive battery based on the patient's Alzheimer's
-    intake profile (age, education, occupation, city, observed symptoms, medical conditions),
-    guaranteeing non-repeating word lists and dynamic clock times/trail layouts.
+    Generates a 100% live AI-personalized 7-test cognitive battery via OpenRouter AI
+    based on the patient's intake profile (age, education, occupation, city, observed symptoms,
+    medical conditions), with no hardcoded fallback pools.
     """
     prev_set = {w.strip().lower() for w in previous_words if w}
-
-    # Select a non-overlapping 5-word pool deterministically from patient profile + session_index
-    is_pytest = "pytest" in sys.modules
+    prev_cats = [c.strip() for c in (previous_categories or []) if c and c.strip()]
+    prev_scenes = [s.strip() for s in (previous_scenes or []) if s and s.strip()]
+    prev_clocks = [t.strip() for t in (previous_clock_times or []) if t and t.strip()]
     profile_hash = int(
         hashlib.sha256(
             f"{person.get('id','')}-{person.get('name','')}-{person.get('age',65)}-{person.get('education_level','')}-{person.get('occupation','')}-{session_index}".encode("utf-8")
         ).hexdigest()[:8],
         16,
     )
-
-    chosen_words: List[str] = WORD_POOLS[0]
-    if not is_pytest or session_index > 0 or prev_set:
-        for offset in range(len(WORD_POOLS)):
-            candidate = WORD_POOLS[(profile_hash + offset) % len(WORD_POOLS)]
-            if not any(w.lower() in prev_set for w in candidate):
-                chosen_words = candidate
-                break
-
-    clock_time = (
-        CLOCK_TARGET_TIMES[(session_index + profile_hash) % len(CLOCK_TARGET_TIMES)]
-        if (not is_pytest or session_index > 0)
-        else "11:10"
-    )
-    fluency = FLUENCY_CATEGORIES[(profile_hash + session_index) % len(FLUENCY_CATEGORIES)]
-    scene = SCENE_VARIATIONS[(profile_hash + session_index) % len(SCENE_VARIATIONS)]
-    orient_q = ORIENTATION_QUESTION_VARIATIONS[(profile_hash + session_index) % len(ORIENTATION_QUESTION_VARIATIONS)].copy()
     dot_coords = generate_randomized_dot_coords(f"{person.get('id','')}-{session_index}-{profile_hash}")
 
     symptoms_str = ", ".join(person.get("observed_symptoms") or []) or "general memory screening"
     conditions_str = ", ".join(person.get("medical_conditions") or []) or "none reported"
 
-    battery: Dict[str, Any] = {
-        "generation_mode": "personalized_baseline",
-        "patient_context": {
-            "age": person.get("age"),
-            "education_level": person.get("education_level", "secondary"),
-            "occupation": person.get("occupation", "retired"),
-            "city": person.get("city", "Lahore"),
-            "observed_symptoms": person.get("observed_symptoms", []),
-            "medical_conditions": person.get("medical_conditions", []),
-        },
-        "orientation_questions": orient_q,
-        "words_en": chosen_words,
-        "words_ur": ["دریا", "آم", "کھڑکی", "لالٹین", "قالین"] if chosen_words == WORD_POOLS[0] else chosen_words,
-        "words_roman_ur": ["darya", "aam", "khirki", "laltain", "qaleen"] if chosen_words == WORD_POOLS[0] else chosen_words,
-        "fluency_category": fluency["category"],
-        "fluency_prompt": fluency["prompt"],
-        "fluency_valid_items": fluency["valid_items"],
-        "picture_scene": scene["scene_id"],
-        "picture_scene_title": scene["title"],
-        "picture_story_prompt": scene["prompt"],
-        "picture_target_items": scene["target_items"],
-        "clock_target_time": clock_time,
-        "dot_coords": dot_coords,
-        "test6_instruction": "Tap the numbered circles in sequential order from 1 up to 12 as quickly and smoothly as possible.",
-        "test7_instruction": "Without looking back at Test 2, speak or type the 5 words that were presented to you earlier in this session.",
-        "clinical_rationale": (
-            f"Tailored for {person.get('name', 'Patient')} ({person.get('age', 65)}yo, {person.get('education_level', 'secondary')} education, "
-            f"background: {person.get('occupation', 'general')}) presenting with {symptoms_str} "
-            f"(medical history: {conditions_str}). Selected fresh 5-word recall set ({', '.join(chosen_words)}) and {clock_time} clock setting."
-        ),
-    }
-
-    client = get_openrouter_client() if (use_ai_online and not is_pytest) else None
-    if client:
-        prompt = f"""You are a clinical neuropsychologist designing a personalized home Alzheimer's & cognitive screening session.
+    client = get_openrouter_client()
+    prompt = f"""You are a clinical neuropsychologist designing a personalized home Alzheimer's & cognitive screening session.
 Patient Profile:
 - Name: {person.get('name')}
 - Age: {person.get('age')}
@@ -259,6 +141,9 @@ Patient Profile:
 - Observed Memory Symptoms: {symptoms_str}
 - Session Number for this Patient: {session_index + 1}
 - Previously Used Recall Words (DO NOT REPEAT ANY OF THESE): {list(prev_set)}
+- Previously Used Fluency Categories (DO NOT REPEAT ANY OF THESE): {prev_cats}
+- Previously Used Picture Scenes (DO NOT REPEAT ANY OF THESE): {prev_scenes}
+- Previously Used Clock Target Times (DO NOT REPEAT ANY OF THESE): {prev_clocks}
 
 Generate a culturally familiar, education-appropriate 7-test configuration in STRICT JSON with these exact keys:
 {{
@@ -271,61 +156,76 @@ Generate a culturally familiar, education-appropriate 7-test configuration in ST
     "instruction": "<1-sentence warm instruction for the 5 orientation questions>"
   }},
   "words_en": ["5 distinct simple English nouns tailored to their background ({person.get('occupation', 'general')}), NONE from previously used words"],
-  "fluency_category": "<category name such as Animals, Kitchen & Household Items, Fruits & Vegetables, or Everyday Objects>",
-  "fluency_prompt": "<clear 1-sentence spoken instruction for the 60-second verbal fluency challenge>",
-  "picture_scene_title": "<tailored title for the courtyard family scene>",
-  "picture_story_prompt": "<1-sentence tailored prompt asking the patient to describe the courtyard tea scene in detail>",
-  "clock_target_time": "<HH:MM clock hand target such as 11:10, 02:45, 08:20, 04:50, 09:15, or 01:50>",
-  "test6_instruction": "<1-sentence tailored instruction for connecting numbered circles 1 to 12>",
-  "test7_instruction": "<1-sentence tailored instruction for delayed recall of the 5 words without looking back>",
+  "fluency_category": "<fresh category name NOT in previously used categories, e.g. Fruits & Vegetables, Kitchen & Cooking Items, Farming & Garden Tools, Vehicles & Transport, Clothing & Accessories, or Household Furniture>",
+  "fluency_prompt": "<clear 1-sentence spoken instruction for the 60-second verbal fluency challenge for that exact category>",
+  "fluency_valid_items": ["35 common English nouns belonging to the chosen fluency_category"],
+  "picture_scene_title": "<unique everyday scene title tailored to {person.get('city')} / {person.get('occupation', 'daily life')}, NOT in previously used scenes, e.g. Morning Village Market, Family Breakfast Table, Farmer's Harvest Field, Sunny Park Walk, or Rainy Veranda Afternoon>",
+  "picture_story_prompt": "<1-sentence tailored prompt asking {person.get('name')} to describe this specific scene in detail>",
+  "picture_target_items": ["15 key English nouns/verbs visible in your chosen scene"],
+  "picture_image_prompt": "<rich, detailed visual prompt for an AI image generator describing a warm, realistic illustration of this exact scene with clear people, objects, and actions, no text in the image>",
+  "test5_instruction": "<1-sentence tailored instruction for delayed recall of the 5 words without looking back>",
   "clinical_rationale": "<1-2 sentence explanation of how this session is tailored to {person.get('name')}'s profile and symptoms>"
 }}
 Return ONLY valid JSON without markdown explanation."""
-        try:
-            response = client.chat.completions.create(
-                extra_headers=get_extra_headers(),
-                model=settings.OPENROUTER_MODEL,
-                messages=[
-                    {"role": "system", "content": "You output strict clinical JSON only."},
-                    {"role": "user", "content": prompt},
-                ],
-                timeout=20.0,
-            )
-            content = response.choices[0].message.content or "{}"
-            ai_data = _extract_json_dict(content)
-            if isinstance(ai_data.get("orientation_questions"), dict):
-                for qk in ("day", "date", "month", "season", "city", "instruction"):
-                    if ai_data["orientation_questions"].get(qk):
-                        battery["orientation_questions"][qk] = str(ai_data["orientation_questions"][qk])
-            ai_words = [str(w).strip().lower() for w in ai_data.get("words_en", []) if str(w).strip()]
-            if len(ai_words) == 5 and not any(w in prev_set for w in ai_words):
-                battery["words_en"] = ai_words
-                battery["words_ur"] = ai_words
-                battery["words_roman_ur"] = ai_words
-            if ai_data.get("fluency_category"):
-                battery["fluency_category"] = str(ai_data["fluency_category"])
-            if ai_data.get("fluency_prompt"):
-                battery["fluency_prompt"] = str(ai_data["fluency_prompt"])
-            if ai_data.get("picture_scene_title"):
-                battery["picture_scene_title"] = str(ai_data["picture_scene_title"])
-            if ai_data.get("picture_story_prompt"):
-                battery["picture_story_prompt"] = str(ai_data["picture_story_prompt"])
-            if ai_data.get("clock_target_time") and re.match(r"^\d{1,2}:\d{2}$", str(ai_data["clock_target_time"])):
-                battery["clock_target_time"] = str(ai_data["clock_target_time"])
-            if ai_data.get("test6_instruction"):
-                battery["test6_instruction"] = str(ai_data["test6_instruction"])
-            if ai_data.get("test7_instruction"):
-                battery["test7_instruction"] = str(ai_data["test7_instruction"])
-            if ai_data.get("clinical_rationale"):
-                battery["clinical_rationale"] = str(ai_data["clinical_rationale"])
-            battery["generation_source"] = "openrouter_ai"
-        except Exception as exc:
-            logger.warning("OpenRouter personalized test generation fallback: %s", exc)
-            battery["generation_source"] = "clinical_profile_engine"
-    else:
-        battery["generation_source"] = "clinical_profile_engine"
 
-    return battery
+    try:
+        response = client.chat.completions.create(
+            extra_headers=get_extra_headers(),
+            model=settings.OPENROUTER_MODEL,
+            temperature=0.85,
+            messages=[
+                {"role": "system", "content": "You output strict clinical JSON only. Vary your question phrasing naturally for every patient."},
+                {"role": "user", "content": prompt},
+            ],
+            timeout=25.0,
+        )
+        content = response.choices[0].message.content or "{}"
+        ai_data = _extract_json_dict(content)
+        if not ai_data:
+            raise ValueError("AI returned an empty or invalid JSON response.")
+    except Exception as exc:
+        logger.error("OpenRouter AI test generation error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to generate AI test right now. Please check your internet connection and try again.",
+        )
+
+    ai_words = [str(w).strip().lower() for w in (ai_data.get("words_en") or []) if str(w).strip()]
+    fluency_items = [str(x).strip().lower() for x in (ai_data.get("fluency_valid_items") or []) if str(x).strip()]
+    picture_items = [str(x).strip().lower() for x in (ai_data.get("picture_target_items") or []) if str(x).strip()]
+    image_prompt = str(ai_data.get("picture_image_prompt") or ai_data.get("picture_scene_title") or "")
+    try:
+        picture_image_url = _generate_and_save_scene_image(image_prompt, profile_hash + session_index)
+    except Exception as img_exc:
+        logger.warning("Scene image generation notice: %s", img_exc)
+        picture_image_url = ""
+
+    return {
+        "generation_mode": "personalized_baseline",
+        "generation_source": "openrouter_ai",
+        "patient_context": {
+            "age": person.get("age"),
+            "education_level": person.get("education_level", "secondary"),
+            "occupation": person.get("occupation", "retired"),
+            "city": person.get("city", "Lahore"),
+            "observed_symptoms": person.get("observed_symptoms", []),
+            "medical_conditions": person.get("medical_conditions", []),
+        },
+        "orientation_questions": ai_data.get("orientation_questions") or {},
+        "words_en": ai_words,
+        "words_ur": ai_words,
+        "words_roman_ur": ai_words,
+        "fluency_category": str(ai_data.get("fluency_category") or ""),
+        "fluency_prompt": str(ai_data.get("fluency_prompt") or ""),
+        "fluency_valid_items": fluency_items,
+        "picture_scene": str(ai_data.get("picture_scene_title") or "ai_scene").lower().replace(" ", "_"),
+        "picture_scene_title": str(ai_data.get("picture_scene_title") or ""),
+        "picture_story_prompt": str(ai_data.get("picture_story_prompt") or ""),
+        "picture_target_items": picture_items,
+        "picture_image_url": picture_image_url,
+        "test5_instruction": str(ai_data.get("test5_instruction") or ai_data.get("test7_instruction") or ""),
+        "clinical_rationale": str(ai_data.get("clinical_rationale") or ""),
+    }
 
 
 def generate_post_visit_adaptive_test(
@@ -337,15 +237,21 @@ def generate_post_visit_adaptive_test(
     previous_words: List[str],
     session_index: int = 1,
     use_ai_online: bool = True,
+    previous_categories: Optional[List[str]] = None,
+    previous_scenes: Optional[List[str]] = None,
+    previous_clock_times: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Stage 3 Post-Visit Adaptive Test Generator:
+    Stage 3 Post-Visit Adaptive Test Generator (100% Live OpenRouter AI, no fallback):
     Builds a targeted follow-up test based on:
     1. The patient's last test scores, domain weaknesses, and missed markers
     2. The doctor's post-visit findings and watch_domains
     3. Confirmed medicines currently being taken
     """
     prev_set = {w.strip().lower() for w in previous_words if w}
+    prev_cats = [c.strip() for c in (previous_categories or []) if c and c.strip()]
+    prev_scenes = [s.strip() for s in (previous_scenes or []) if s and s.strip()]
+    prev_clocks = [t.strip() for t in (previous_clock_times or []) if t and t.strip()]
 
     last_total = last_session.get("total_score") if last_session else None
     last_domains = (last_session or {}).get("domain_scores", {})
@@ -359,22 +265,7 @@ def generate_post_visit_adaptive_test(
 
     doc_findings = (doctor_doc or {}).get("findings_text", "")
     watch_domains = list(set(weak_domains + ((doctor_doc or {}).get("watch_domains") or [])))
-    if not watch_domains:
-        watch_domains = ["memory", "orientation"]
-
     active_meds = [f"{m['name']} ({m['dose']})" for m in medicines if m.get("active", True)]
-
-    # Pick a guaranteed fresh word pool that was NOT used in previous sessions
-    chosen_words = WORD_POOLS[1]
-    for pool in WORD_POOLS:
-        if not any(w.lower() in prev_set for w in pool):
-            chosen_words = pool
-            break
-
-    clock_time = CLOCK_TARGET_TIMES[(session_index + 2) % len(CLOCK_TARGET_TIMES)]
-    fluency = FLUENCY_CATEGORIES[(session_index + 1) % len(FLUENCY_CATEGORIES)]
-    scene = SCENE_VARIATIONS[session_index % len(SCENE_VARIATIONS)]
-    orient_q = ORIENTATION_QUESTION_VARIATIONS[(session_index + 1) % len(ORIENTATION_QUESTION_VARIATIONS)].copy()
     dot_coords = generate_randomized_dot_coords(f"adaptive-{person.get('id','')}-{session_index}")
 
     adaptive_context = {
@@ -387,36 +278,8 @@ def generate_post_visit_adaptive_test(
         "active_medicines": active_meds,
     }
 
-    battery: Dict[str, Any] = {
-        "generation_mode": "post_visit_adaptive",
-        "adaptive_context": adaptive_context,
-        "orientation_questions": orient_q,
-        "words_en": chosen_words,
-        "words_ur": chosen_words,
-        "words_roman_ur": chosen_words,
-        "fluency_category": fluency["category"],
-        "fluency_prompt": fluency["prompt"],
-        "fluency_valid_items": fluency["valid_items"],
-        "picture_scene": scene["scene_id"],
-        "picture_scene_title": scene["title"],
-        "picture_story_prompt": scene["prompt"],
-        "picture_target_items": scene["target_items"],
-        "clock_target_time": clock_time,
-        "dot_coords": dot_coords,
-        "test6_instruction": "Tap the numbered circles in sequential order from 1 up to 12 to assess post-visit executive processing speed.",
-        "test7_instruction": "Without looking back at Test 2, speak or type the 5 words that were presented to you earlier in this follow-up session.",
-        "clinical_rationale": (
-            f"Post-Visit Adaptive Follow-Up generated from last session (Score: {last_total if last_total is not None else 'N/A'}) "
-            f"targeting domains [{', '.join(watch_domains)}]"
-            f"{' and doctor findings: ' + doc_findings if doc_findings else ''}. "
-            f"Uses a new 5-word recall set ({', '.join(chosen_words)}) and clock target {clock_time} to prevent practice effects."
-        ),
-    }
-
-    is_pytest = "pytest" in sys.modules
-    client = get_openrouter_client() if (use_ai_online and not is_pytest) else None
-    if client:
-        prompt = f"""You are a clinical neuropsychologist generating a POST-VISIT ADAPTIVE FOLLOW-UP cognitive test for an Alzheimer's / memory care patient.
+    client = get_openrouter_client()
+    prompt = f"""You are a clinical neuropsychologist generating a POST-VISIT ADAPTIVE FOLLOW-UP cognitive test for an Alzheimer's / memory care patient.
 Patient Info: {person.get('name')}, {person.get('age')}yo {person.get('gender')} in {person.get('city')}, education: {person.get('education_level', 'secondary')}.
 Previous Session Total Score: {last_total}
 Previous Domain Scores: {json.dumps(last_domains)}
@@ -425,6 +288,9 @@ Previous Errors / Missed Markers: {missed_markers[:10]}
 Doctor's Post-Visit Findings: {doc_findings or 'Follow-up evaluation'}
 Active Confirmed Medicines: {active_meds}
 Words Already Used in Previous Sessions (NEVER REPEAT): {list(prev_set)}
+Fluency Categories Already Used (NEVER REPEAT): {prev_cats}
+Picture Scenes Already Used (NEVER REPEAT): {prev_scenes}
+Clock Target Times Already Used (NEVER REPEAT): {prev_clocks}
 
 Generate a fresh adaptive follow-up test configuration in STRICT JSON:
 {{
@@ -437,63 +303,78 @@ Generate a fresh adaptive follow-up test configuration in STRICT JSON:
     "instruction": "<1-sentence follow-up instruction for orientation>"
   }},
   "words_en": ["5 brand-new simple concrete English nouns not in previously used words"],
-  "fluency_category": "<category name probing verbal retrieval>",
-  "fluency_prompt": "<1-sentence spoken instruction for 60s fluency>",
-  "picture_story_prompt": "<1-sentence prompt asking to describe the scene with focus on actions and objects>",
-  "clock_target_time": "<new clock hand time in HH:MM format different from 11:10, e.g. 02:45 or 08:20>",
-  "test6_instruction": "<1-sentence instruction for the 1-to-12 trail making task>",
-  "test7_instruction": "<1-sentence instruction for delayed recall of the 5 words>",
+  "fluency_category": "<fresh category name NOT in previously used categories>",
+  "fluency_prompt": "<1-sentence spoken instruction for 60s fluency for that exact category>",
+  "fluency_valid_items": ["35 common English nouns belonging to the chosen fluency_category"],
+  "picture_scene_title": "<brand-new everyday scene title NOT in previously used scenes>",
+  "picture_story_prompt": "<1-sentence prompt asking to describe this specific scene with focus on actions and objects>",
+  "picture_target_items": ["15 key English nouns/verbs visible in your chosen scene"],
+  "picture_image_prompt": "<rich, detailed visual prompt for an AI image generator describing a warm, realistic illustration of this exact scene with clear people, objects, and actions, no text in the image>",
+  "test5_instruction": "<1-sentence instruction for delayed recall of the 5 words>",
   "clinical_rationale": "<2-sentence clinical explanation of how this follow-up test adapts to the last test's weak domains and doctor's findings>"
 }}
 Return ONLY valid JSON without markdown explanation."""
-        try:
-            response = client.chat.completions.create(
-                extra_headers=get_extra_headers(),
-                model=settings.OPENROUTER_MODEL,
-                messages=[
-                    {"role": "system", "content": "You output strict clinical JSON only."},
-                    {"role": "user", "content": prompt},
-                ],
-                timeout=20.0,
-            )
-            content = response.choices[0].message.content or "{}"
-            ai_data = _extract_json_dict(content)
-            if isinstance(ai_data.get("orientation_questions"), dict):
-                for qk in ("day", "date", "month", "season", "city", "instruction"):
-                    if ai_data["orientation_questions"].get(qk):
-                        battery["orientation_questions"][qk] = str(ai_data["orientation_questions"][qk])
-            ai_words = [str(w).strip().lower() for w in ai_data.get("words_en", []) if str(w).strip()]
-            if len(ai_words) == 5 and not any(w in prev_set for w in ai_words):
-                battery["words_en"] = ai_words
-                battery["words_ur"] = ai_words
-                battery["words_roman_ur"] = ai_words
-            if ai_data.get("fluency_category"):
-                battery["fluency_category"] = str(ai_data["fluency_category"])
-            if ai_data.get("fluency_prompt"):
-                battery["fluency_prompt"] = str(ai_data["fluency_prompt"])
-            if ai_data.get("picture_story_prompt"):
-                battery["picture_story_prompt"] = str(ai_data["picture_story_prompt"])
-            if ai_data.get("clock_target_time") and re.match(r"^\d{1,2}:\d{2}$", str(ai_data["clock_target_time"])):
-                battery["clock_target_time"] = str(ai_data["clock_target_time"])
-            if ai_data.get("test6_instruction"):
-                battery["test6_instruction"] = str(ai_data["test6_instruction"])
-            if ai_data.get("test7_instruction"):
-                battery["test7_instruction"] = str(ai_data["test7_instruction"])
-            if ai_data.get("clinical_rationale"):
-                battery["clinical_rationale"] = str(ai_data["clinical_rationale"])
-            battery["generation_source"] = "openrouter_ai"
-        except Exception as exc:
-            logger.warning("OpenRouter adaptive test generation fallback: %s", exc)
-            battery["generation_source"] = "adaptive_rule_engine"
-    else:
-        battery["generation_source"] = "adaptive_rule_engine"
 
-    return battery
+    try:
+        response = client.chat.completions.create(
+            extra_headers=get_extra_headers(),
+            model=settings.OPENROUTER_MODEL,
+            temperature=0.85,
+            messages=[
+                {"role": "system", "content": "You output strict clinical JSON only. Vary your question phrasing naturally for every patient."},
+                {"role": "user", "content": prompt},
+            ],
+            timeout=25.0,
+        )
+        content = response.choices[0].message.content or "{}"
+        ai_data = _extract_json_dict(content)
+        if not ai_data:
+            raise ValueError("AI returned an empty or invalid JSON response.")
+    except Exception as exc:
+        logger.error("OpenRouter adaptive test generation error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to generate adaptive AI test right now. Please check your internet connection and try again.",
+        )
+
+    ai_words = [str(w).strip().lower() for w in (ai_data.get("words_en") or []) if str(w).strip()]
+    fluency_items = [str(x).strip().lower() for x in (ai_data.get("fluency_valid_items") or []) if str(x).strip()]
+    picture_items = [str(x).strip().lower() for x in (ai_data.get("picture_target_items") or []) if str(x).strip()]
+    image_prompt = str(ai_data.get("picture_image_prompt") or ai_data.get("picture_scene_title") or "")
+    try:
+        picture_image_url = _generate_and_save_scene_image(image_prompt, session_index + 777)
+    except Exception as img_exc:
+        logger.warning("Adaptive scene image generation notice: %s", img_exc)
+        picture_image_url = ""
+
+    return {
+        "generation_mode": "post_visit_adaptive",
+        "generation_source": "openrouter_ai",
+        "adaptive_context": adaptive_context,
+        "orientation_questions": ai_data.get("orientation_questions") or {},
+        "words_en": ai_words,
+        "words_ur": ai_words,
+        "words_roman_ur": ai_words,
+        "fluency_category": str(ai_data.get("fluency_category") or ""),
+        "fluency_prompt": str(ai_data.get("fluency_prompt") or ""),
+        "fluency_valid_items": fluency_items,
+        "picture_scene": str(ai_data.get("picture_scene_title") or "ai_scene").lower().replace(" ", "_"),
+        "picture_scene_title": str(ai_data.get("picture_scene_title") or ""),
+        "picture_story_prompt": str(ai_data.get("picture_story_prompt") or ""),
+        "picture_target_items": picture_items,
+        "picture_image_url": picture_image_url,
+        "test5_instruction": str(ai_data.get("test5_instruction") or ai_data.get("test7_instruction") or ""),
+        "clinical_rationale": str(ai_data.get("clinical_rationale") or ""),
+    }
 
 
-def evaluate_picture_story_with_ai(spoken_description: str) -> Dict[str, Any]:
+def evaluate_picture_story_with_ai(
+    spoken_description: str,
+    scene_title: str = "",
+    target_items: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
-    Test 4 AI Analysis: Evaluates the spoken description of the courtyard scene.
+    Test 4 AI Analysis: Evaluates the spoken description of the AI-generated scene via OpenRouter AI.
     """
     text = (spoken_description or "").strip()
     if not text:
@@ -505,21 +386,11 @@ def evaluate_picture_story_with_ai(spoken_description: str) -> Dict[str, Any]:
             "linguistic_notes": "0 words recorded.",
         }
 
+    scene_label = scene_title.strip() or "the illustrated scene"
+    items_hint = ", ".join(target_items or []) or "people, objects, background, actions"
     client = get_openrouter_client()
-    if not client:
-        words = [w.lower() for w in text.split()]
-        key_themes = ["courtyard", "tree", "tea", "teapot", "table", "charpoy", "sun", "sparrow", "bird", "child", "book", "grandmother", "cup"]
-        found = sorted({t for t in key_themes if any(t in w for w in words)})
-        return {
-            "source": "rule_engine",
-            "themes_identified": found,
-            "semantic_score": min(100.0, round((len(found) / 6.0) * 100.0, 1)),
-            "narrative_quality": f"Identified {len(found)} core scene elements across {len(words)} words.",
-            "linguistic_notes": f"Word count: {len(words)}; matched entities: {', '.join(found) or 'none'}.",
-        }
-
     prompt = f"""You are a clinical neuropsychologist assistant for a cognitive screening aid.
-Analyze the following patient's spoken description of an illustrated courtyard tea scene (features: courtyard, tree, sparrow/bird, charpoy, grandmother, teapot, cup, child reading a book, sun).
+Analyze the following patient's spoken description of an illustrated scene titled "{scene_label}" (key elements: {items_hint}).
 
 Patient's Description:
 \"\"\"{text}\"\"\"
@@ -541,25 +412,18 @@ Return ONLY valid JSON."""
                 {"role": "system", "content": "You are a specialized clinical AI assistant that outputs JSON only."},
                 {"role": "user", "content": prompt},
             ],
-            response_format={"type": "json_object"},
-            timeout=10.0,
+            timeout=15.0,
         )
         content = response.choices[0].message.content or "{}"
-        parsed = json.loads(content)
+        parsed = _extract_json_dict(content)
         parsed["source"] = "openrouter_ai"
         return parsed
-    except Exception as e:
-        logger.warning("OpenRouter picture story analysis error: %s", e)
-        words = [w.lower() for w in text.split()]
-        key_themes = ["courtyard", "tree", "tea", "teapot", "charpoy", "sun", "sparrow", "bird", "child", "book", "grandmother", "cup"]
-        found = sorted({t for t in key_themes if any(t in w for w in words)})
-        return {
-            "source": "rule_engine_fallback",
-            "themes_identified": found,
-            "semantic_score": min(100.0, round((len(found) / 6.0) * 100.0, 1)),
-            "narrative_quality": f"Identified {len(found)} scene elements across {len(words)} words.",
-            "linguistic_notes": f"Word count: {len(words)}.",
-        }
+    except Exception as exc:
+        logger.error("OpenRouter picture story analysis error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to analyze picture story with AI right now. Please try again.",
+        )
 
 
 def evaluate_clock_vision_with_ai(
@@ -568,30 +432,15 @@ def evaluate_clock_vision_with_ai(
     stroke_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Test 5 Multimodal Vision Analysis: Evaluates the drawn clock on canvas.
-    Never returns a fake 100/100 score on an empty drawing.
+    Test 5 Multimodal Vision Analysis: Evaluates the drawn clock on canvas via OpenRouter Vision AI.
     """
-    strokes = (stroke_data or {}).get("strokes") or []
-    geom_chk = clock_vision_provider.evaluate_clock(
-        target_time=target_time,
-        stroke_data=stroke_data,
-        image_base64=image_data_uri,
-    )
+    if not image_data_uri or len(image_data_uri) < 120:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please draw the clock on the canvas first.",
+        )
 
     client = get_openrouter_client()
-    if not client or not image_data_uri or len(image_data_uri) < 120:
-        pts = sum(1 for v in geom_chk.model_dump().values() if v)
-        return {
-            "source": "stroke_geometry_engine",
-            "checklist": geom_chk.model_dump(),
-            "score": round((pts / 6.0) * 100.0, 1),
-            "observations": (
-                f"Evaluated {len(strokes)} drawn strokes against target time {target_time}."
-                if strokes
-                else "Canvas has no recorded clock strokes yet; checklist items remain unchecked."
-            ),
-        }
-
     img_payload = (
         {"url": image_data_uri}
         if image_data_uri.startswith("http") or image_data_uri.startswith("data:")
@@ -636,68 +485,33 @@ Return ONLY valid JSON."""
                     ],
                 }
             ],
-            response_format={"type": "json_object"},
-            timeout=12.0,
+            timeout=20.0,
         )
         content = response.choices[0].message.content or "{}"
-        parsed = json.loads(content)
+        parsed = _extract_json_dict(content)
         parsed["source"] = "openrouter_vision_ai"
         return parsed
-    except Exception as e:
-        logger.warning("OpenRouter clock vision fallback to stroke geometry: %s", e)
-        pts = sum(1 for v in geom_chk.model_dump().values() if v)
-        return {
-            "source": "stroke_geometry_fallback",
-            "checklist": geom_chk.model_dump(),
-            "score": round((pts / 6.0) * 100.0, 1),
-            "observations": f"Evaluated from {len(strokes)} canvas strokes (target {target_time}).",
-        }
-
-
-def _parse_medicines_from_text_regex(text: str) -> List[Dict[str, Any]]:
-    """
-    Deterministic parser that extracts only explicitly written medicine lines
-    (e.g., 'Donepezil 5mg', 'Memantine 10 mg') from text without ever inventing a drug.
-    """
-    if not text or not text.strip():
-        return []
-    pattern = re.compile(r"\b([A-Z][a-zA-Z]{2,24})\s+(\d+\s*(?:mg|mcg|g|ml|tablet|tab|cap))\b")
-    meds: List[Dict[str, Any]] = []
-    for match in pattern.finditer(text):
-        name, dose = match.group(1), match.group(2).replace(" ", "")
-        if name.lower() in ("take", "daily", "once", "twice", "follow", "after", "before", "patient", "visit"):
-            continue
-        meds.append(
-            {
-                "name": name,
-                "dose": dose,
-                "frequency_per_day": 1,
-                "reminder_times": ["21:00"],
-                "instructions": "Verify against doctor's written prescription before confirming",
-            }
+    except Exception as exc:
+        logger.error("OpenRouter clock vision error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to analyze clock drawing with Vision AI right now. Please try again.",
         )
-    return meds
 
 
 def extract_prescription_with_ai(prescription_text: str, image_data_uri: Optional[str] = None) -> Dict[str, Any]:
     """
-    Stage 3 Post-Visit: Extracts doctor findings, prescribed medicines, doses, reminder times, and follow-up advice.
+    Stage 3 Post-Visit: Extracts doctor findings, prescribed medicines, doses, reminder times, and follow-up advice via OpenRouter AI.
     Safety rule: Never invents or suggests any medicine not present in the input.
     """
     clean_text = (prescription_text or "").strip()
-    client = get_openrouter_client()
-    if not client or (not clean_text and not image_data_uri):
-        parsed_meds = _parse_medicines_from_text_regex(clean_text)
-        days_match = re.search(r"(\d+)\s*days?", clean_text, re.IGNORECASE)
-        followup_days = int(days_match.group(1)) if days_match else 30
-        return {
-            "source": "text_parser",
-            "findings_summary": clean_text or "No prescription text provided.",
-            "medicines": parsed_meds,
-            "followup_interval_days": followup_days,
-            "advice": "Please verify all entries against the doctor's physical prescription.",
-        }
+    if not clean_text and not image_data_uri:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please provide doctor findings text or a prescription image.",
+        )
 
+    client = get_openrouter_client()
     content_list: List[Dict[str, Any]] = []
     text_prompt = f"""You are a medical assistant parsing a doctor's prescription report for a patient cognitive care app.
 CRITICAL SAFETY RULE: Extract ONLY medicines explicitly written in the input. NEVER invent, guess, or suggest any medicine that is not in the input. If no medicine is mentioned, return an empty list [] for "medicines".
@@ -738,19 +552,15 @@ Return ONLY JSON."""
                 {"role": "system", "content": "You are a clinical prescription parser. Never invent medicines. Output valid JSON only."},
                 {"role": "user", "content": content_list},
             ],
-            response_format={"type": "json_object"},
-            timeout=12.0,
+            timeout=20.0,
         )
         content = response.choices[0].message.content or "{}"
-        parsed = json.loads(content)
+        parsed = _extract_json_dict(content)
         parsed["source"] = "openrouter_ai"
         return parsed
-    except Exception as e:
-        logger.warning("OpenRouter prescription extraction fallback: %s", e)
-        return {
-            "source": "text_parser_fallback",
-            "findings_summary": clean_text,
-            "medicines": _parse_medicines_from_text_regex(clean_text),
-            "followup_interval_days": 30,
-            "advice": "Verify against doctor's original prescription.",
-        }
+    except Exception as exc:
+        logger.error("OpenRouter prescription extraction error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to extract prescription with AI right now. Please try again.",
+        )

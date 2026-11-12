@@ -1,9 +1,9 @@
+import mimetypes
 from pathlib import Path
 from typing import Dict
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from backend.app.core.config import settings
 from backend.app.routers import (
     ai,
@@ -21,6 +21,14 @@ from backend.app.routers import (
 ROOT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = ROOT_DIR / "frontend"
 ASSETS_DIR = FRONTEND_DIR / "assets"
+SCENE_IMAGES_DIR = ROOT_DIR / "uploads" / "scene_images"
+SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 def create_application() -> FastAPI:
@@ -40,16 +48,33 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @application.middleware("http")
-    async def disable_static_cache(request, call_next):
-        response = await call_next(request)
-        if request.url.path == "/" or request.url.path.startswith("/assets"):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-        return response
+    @application.get("/assets/{asset_path:path}", include_in_schema=False)
+    def serve_asset(asset_path: str):
+        target = (ASSETS_DIR / asset_path).resolve()
+        if not str(target).startswith(str(ASSETS_DIR.resolve())) or not target.is_file():
+            raise HTTPException(status_code=404, detail="Asset not found")
+        mime_type, _ = mimetypes.guess_type(str(target))
+        if target.suffix == ".js":
+            mime_type = "application/javascript; charset=utf-8"
+        elif target.suffix == ".css":
+            mime_type = "text/css; charset=utf-8"
+        return Response(
+            content=target.read_bytes(),
+            media_type=mime_type or "application/octet-stream",
+            headers=NO_CACHE_HEADERS,
+        )
 
-    if ASSETS_DIR.exists():
-        application.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+    @application.get("/scene-images/{filename}", include_in_schema=False)
+    def serve_scene_image(filename: str):
+        target = (SCENE_IMAGES_DIR / filename).resolve()
+        if not str(target).startswith(str(SCENE_IMAGES_DIR.resolve())) or not target.is_file():
+            raise HTTPException(status_code=404, detail="Scene image not found")
+        mime_type, _ = mimetypes.guess_type(str(target))
+        return Response(
+            content=target.read_bytes(),
+            media_type=mime_type or "image/jpeg",
+            headers=NO_CACHE_HEADERS,
+        )
 
     @application.get("/health", tags=["System Health"])
     def health_check() -> Dict[str, object]:
@@ -67,7 +92,11 @@ def create_application() -> FastAPI:
     def serve_frontend():
         index_file = FRONTEND_DIR / "index.html"
         if index_file.exists():
-            return FileResponse(str(index_file))
+            return Response(
+                content=index_file.read_bytes(),
+                media_type="text/html; charset=utf-8",
+                headers=NO_CACHE_HEADERS,
+            )
         return JSONResponse({"message": "Yaadasht API is running. Visit /docs for OpenAPI documentation."})
 
     application.include_router(auth.router)

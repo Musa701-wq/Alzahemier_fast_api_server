@@ -347,7 +347,7 @@ def compute_session_aggregates(results: List[Dict[str, Any]]) -> Tuple[float, Di
         return 0.0, {}
 
     by_num = {r["test_number"]: float(r["score"]) for r in results}
-    all_scores = list(by_num.values())
+    all_scores = [float(r["score"]) for r in results]
     total_score = round(sum(all_scores) / len(all_scores), 2)
 
     domain_Buckets: Dict[str, List[float]] = {
@@ -358,20 +358,19 @@ def compute_session_aggregates(results: List[Dict[str, Any]]) -> Tuple[float, Di
         "attention": [],
     }
 
-    if 1 in by_num:
-        domain_Buckets["orientation"].append(by_num[1])
-    if 2 in by_num:
-        domain_Buckets["memory"].append(by_num[2])
-    if 7 in by_num:
-        domain_Buckets["memory"].append(by_num[7])
-    if 3 in by_num:
-        domain_Buckets["language"].append(by_num[3])
-    if 4 in by_num:
-        domain_Buckets["language"].append(by_num[4])
-    if 5 in by_num:
-        domain_Buckets["planning"].append(by_num[5])
-    if 6 in by_num:
-        domain_Buckets["attention"].append(by_num[6])
+    for r in results:
+        t_type = r.get("test_type")
+        sc = float(r["score"])
+        if t_type == "orientation":
+            domain_Buckets["orientation"].append(sc)
+        elif t_type in ("word_recall_immediate", "word_recall_delayed"):
+            domain_Buckets["memory"].append(sc)
+        elif t_type in ("animal_naming", "picture_story"):
+            domain_Buckets["language"].append(sc)
+        elif t_type == "clock_drawing":
+            domain_Buckets["planning"].append(sc)
+        elif t_type == "dot_connecting":
+            domain_Buckets["attention"].append(sc)
 
     domain_scores = {
         dom: round(sum(vals) / len(vals), 2)

@@ -292,37 +292,39 @@ def _transcribe_wav_bytes_google(wav_bytes: bytes, wav_file_path: Optional[Path]
             raw_pcm = struct.pack("<" + "h" * n_samples, *boosted)
 
     flac_bytes = _pcm16le_to_flac(raw_pcm, 16000)
-    for lang_code in (language, "en-PK"):
-        params = urlencode(
-            {
-                "client": "chromium",
-                "lang": lang_code,
-                "key": "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw",
-                "pFilter": 0,
-            }
-        )
-        url = f"http://www.google.com/speech-api/v2/recognize?{params}"
+    speech_key = getattr(settings, "GOOGLE_SPEECH_API_KEY", "").strip()
+    if speech_key:
+        for lang_code in (language, "en-PK"):
+            params = urlencode(
+                {
+                    "client": "chromium",
+                    "lang": lang_code,
+                    "key": speech_key,
+                    "pFilter": 0,
+                }
+            )
+            url = f"http://www.google.com/speech-api/v2/recognize?{params}"
 
-        for payload_bytes, content_type in (
-            (flac_bytes, "audio/x-flac; rate=16000"),
-            (raw_pcm, "audio/l16; rate=16000"),
-        ):
-            try:
-                req = Request(url, data=payload_bytes, headers={"Content-Type": content_type})
-                with urlopen(req, timeout=8) as resp:
-                    resp_text = resp.read().decode("utf-8", errors="ignore")
-                for line in resp_text.split("\n"):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    data = json.loads(line)
-                    results = data.get("result") or []
-                    if results and results[0].get("alternative"):
-                        txt = str(results[0]["alternative"][0].get("transcript", "")).strip()
-                        if txt:
-                            return txt
-            except Exception:
-                pass
+            for payload_bytes, content_type in (
+                (flac_bytes, "audio/x-flac; rate=16000"),
+                (raw_pcm, "audio/l16; rate=16000"),
+            ):
+                try:
+                    req = Request(url, data=payload_bytes, headers={"Content-Type": content_type})
+                    with urlopen(req, timeout=8) as resp:
+                        resp_text = resp.read().decode("utf-8", errors="ignore")
+                    for line in resp_text.split("\n"):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        data = json.loads(line)
+                        results = data.get("result") or []
+                        if results and results[0].get("alternative"):
+                            txt = str(results[0]["alternative"][0].get("transcript", "")).strip()
+                            if txt:
+                                return txt
+                except Exception:
+                    pass
 
     # 2. Fallback to Windows built-in SAPI SpeechRecognitionEngine if offline
     if wav_file_path and wav_file_path.exists():

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_MODEL: str = "openrouter/auto"
+    GOOGLE_SPEECH_API_KEY: str = ""
     SITE_URL: str = "http://127.0.0.1:8000"
     SITE_NAME: str = "Yaadasht Cognitive Screening"
 

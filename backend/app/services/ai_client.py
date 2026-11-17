@@ -12,9 +12,16 @@ from fastapi import HTTPException, status
 from openai import OpenAI
 from backend.app.core.config import settings
 
+import tempfile
+
 logger = logging.getLogger("yaadasht.ai")
-SCENE_IMAGES_DIR = Path(__file__).resolve().parents[3] / "uploads" / "scene_images"
-SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    SCENE_IMAGES_DIR = Path(__file__).resolve().parents[3] / "uploads" / "scene_images"
+    SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError):
+    SCENE_IMAGES_DIR = Path(tempfile.gettempdir()) / "yaadasht_uploads" / "scene_images"
+    SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _generate_and_save_scene_image(image_prompt: str, seed: int) -> str:
@@ -485,7 +492,7 @@ Return ONLY valid JSON."""
                     ],
                 }
             ],
-            timeout=20.0,
+            timeout=30.0,
         )
         content = response.choices[0].message.content or "{}"
         parsed = _extract_json_dict(content)
@@ -513,26 +520,29 @@ def extract_prescription_with_ai(prescription_text: str, image_data_uri: Optiona
 
     client = get_openrouter_client()
     content_list: List[Dict[str, Any]] = []
-    text_prompt = f"""You are a medical assistant parsing a doctor's prescription report for a patient cognitive care app.
-CRITICAL SAFETY RULE: Extract ONLY medicines explicitly written in the input. NEVER invent, guess, or suggest any medicine that is not in the input. If no medicine is mentioned, return an empty list [] for "medicines".
+    text_prompt = f"""You are a medical assistant summarizing a doctor's or dementia/brain report for a patient & caregiver cognitive care app.
+CRITICAL SAFETY RULE: Do NOT diagnose or invent any medicine. Only extract medicines if explicitly written in the input (otherwise return [] for "medicines").
 
-Input Prescription / Notes:
+Input Report / Notes:
 \"\"\"{clean_text}\"\"\"
 
-Output STRICT JSON:
+Analyze the report (and image if provided) and output STRICT JSON:
 {{
-  "findings_summary": "<string>",
-  "medicines": [
+  "findings_summary": "<2-3 sentence clear summary of the essential clinical findings in plain language>",
+  "key_highlights": [
+    "<important finding, score, or region highlight from the report>"
+  ],
+  "care_scenario": "<2-3 sentence practical scenario explaining how AI & caregiver monitoring helps based on this report>",
+  "recommended_tests": [
     {{
-      "name": "<string>",
-      "dose": "<string>",
-      "frequency_per_day": <int>,
-      "reminder_times": ["<HH:MM>"],
-      "instructions": "<string>"
+      "test_name": "<one of: Orientation, Immediate Recall, Picture Story, Clock Drawing, Connect Dots, Delayed Recall>",
+      "reason": "<brief reason why this test is useful for this report>"
     }}
   ],
+  "watch_domains": ["<memory | orientation | language | visuospatial | executive>"],
+  "medicines": [],
   "followup_interval_days": <int>,
-  "advice": "<string>"
+  "advice": "<practical next-step advice for the caregiver>"
 }}
 Return ONLY JSON."""
     content_list.append({"type": "text", "text": text_prompt})
@@ -544,23 +554,34 @@ Return ONLY JSON."""
         )
         content_list.append({"type": "image_url", "image_url": img_payload})
 
-    try:
-        response = client.chat.completions.create(
-            extra_headers=get_extra_headers(),
-            model=settings.OPENROUTER_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a clinical prescription parser. Never invent medicines. Output valid JSON only."},
-                {"role": "user", "content": content_list},
-            ],
-            timeout=20.0,
-        )
-        content = response.choices[0].message.content or "{}"
-        parsed = _extract_json_dict(content)
-        parsed["source"] = "openrouter_ai"
-        return parsed
-    except Exception as exc:
-        logger.error("OpenRouter prescription extraction error: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to extract prescription with AI right now. Please try again.",
-        )
+    models_to_try = [settings.OPENROUTER_MODEL]
+    if image_data_uri and settings.OPENROUTER_MODEL != "openai/gpt-4o-mini":
+        models_to_try.append("openai/gpt-4o-mini")
+
+    last_exc: Optional[Exception] = None
+    for model_name in models_to_try:
+        try:
+            response = client.chat.completions.create(
+                extra_headers=get_extra_headers(),
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a clinical report & prescription parser. Never invent medicines. Output valid JSON only."},
+                    {"role": "user", "content": content_list},
+                ],
+                timeout=45.0,
+            )
+            content = response.choices[0].message.content or "{}"
+            parsed = _extract_json_dict(content)
+            if not parsed or not parsed.get("findings_summary"):
+                raise ValueError("Empty or invalid JSON from Vision AI.")
+            parsed["source"] = "openrouter_ai"
+            return parsed
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("OpenRouter report extraction failed on %s: %s", model_name, exc)
+
+    logger.error("OpenRouter prescription extraction error: %s", last_exc)
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Unable to extract report with AI right now. Please try again.",
+    )

@@ -18,11 +18,18 @@ from backend.app.routers import (
     sessions,
 )
 
+import tempfile
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = ROOT_DIR / "frontend"
 ASSETS_DIR = FRONTEND_DIR / "assets"
-SCENE_IMAGES_DIR = ROOT_DIR / "uploads" / "scene_images"
-SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    SCENE_IMAGES_DIR = ROOT_DIR / "uploads" / "scene_images"
+    SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+except (OSError, PermissionError):
+    SCENE_IMAGES_DIR = Path(tempfile.gettempdir()) / "yaadasht_uploads" / "scene_images"
+    SCENE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

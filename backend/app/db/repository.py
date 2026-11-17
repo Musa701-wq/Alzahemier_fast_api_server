@@ -12,10 +12,24 @@ from fastapi import HTTPException, status
 from backend.app.core.config import settings
 from backend.app.db.seed_data import build_seed_doctors, build_seed_safety_resources
 
+import tempfile
+
 logger = logging.getLogger("yaadasht.db")
 
-LOCAL_DB_STORE_PATH = Path(__file__).resolve().parents[3] / "uploads" / "yaadasht_db_store.json"
-LOCAL_DB_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _resolve_local_db_path() -> Path:
+    candidate = Path(__file__).resolve().parents[3] / "uploads" / "yaadasht_db_store.json"
+    try:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+    except (OSError, PermissionError):
+        tmp_dir = Path(tempfile.gettempdir()) / "yaadasht"
+        try:
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            return tmp_dir / "yaadasht_db_store.json"
+        except Exception:
+            return Path(tempfile.gettempdir()) / "yaadasht_db_store.json"
+
+LOCAL_DB_STORE_PATH = _resolve_local_db_path()
 _LOCAL_DB_CACHE: Dict[str, Dict[str, Any]] = {}
 
 

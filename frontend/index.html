@@ -48,7 +48,7 @@
           </span>
           <div class="appbar__brand-text">
             <span class="appbar__name">Yaad<span>asht</span></span>
-            <span class="appbar__sub">Home Cognitive Screening &amp; Care</span>
+            <span class="appbar__sub">AI-Powered Cognitive Screening &amp; Care-Continuity Platform</span>
           </div>
         </a>
 
@@ -67,7 +67,7 @@
             <span>Doctors</span>
           </button>
           <button type="button" class="nav-link" data-section="postvisit">
-            <span>Post-Visit &amp; Medicines</span>
+            <span>Post-Visit</span>
           </button>
           <button type="button" class="nav-link" data-section="settings">
             <span>Settings</span>
@@ -80,11 +80,11 @@
             <span class="voice-dot"></span>
             <span id="voiceGuideStatusText">🔊 Voice: On</span>
           </button>
-          <button type="button" class="appbar__status" id="btnOpenAuthModal" style="cursor:pointer;border:none;" title="Account Status">
-            <span id="activePersonBadge">Login / Sign Up</span>
+          <button type="button" class="appbar__status" id="btnOpenAuthModal" style="cursor:pointer;border:none;" title="Platform Status">
+            <span id="activePersonBadge">🟢 Zero-Friction Mode</span>
           </button>
-          <button type="button" class="voice-mode-pill hidden" id="btnHeaderLogout" title="Logout from current profile" style="border-color:rgba(248,113,113,0.45);background:rgba(239,68,68,0.16);color:#fecaca;">
-            <span>🚪 Logout</span>
+          <button type="button" class="voice-mode-pill hidden" id="btnHeaderLogout" title="Reset current patient profile" style="border-color:rgba(248,113,113,0.45);background:rgba(239,68,68,0.16);color:#fecaca;">
+            <span>🔄 New Patient</span>
           </button>
         </div>
       </div>
@@ -199,26 +199,26 @@
         </div>
 
         <!-- =====================================================
-             VIEW B: PUBLIC / NEW PATIENT SETUP VIEW (CONCISE)
+             VIEW B: PUBLIC / NEW PATIENT SETUP VIEW (ZERO-FRICTION)
              ===================================================== -->
         <div class="hero-full" id="homeGuestView">
           <div class="hero-full__left anim-item anim-d1">
             <div class="eyebrow-pill">
               <span class="pulse-dot"></span>
-              <span>AI Cognitive Screening · Not a Diagnosis</span>
+              <span>Zero-Friction · No Login Needed · 15-Minute Home Screening</span>
             </div>
 
             <h1 class="hero-display">
-              15-Minute <span class="text-gradient">Memory &amp; Cognitive Check</span>
+              Yaadasht – <span class="text-gradient">AI Cognitive Screening</span> &amp; Care Platform
             </h1>
 
             <p class="hero-lead">
-              7 voice-guided cognitive tests tailored to your profile, with an instant clinical PDF report and specialist care tracking.
+              A direct-access clinical screening platform empowering families to perform 7 multi-modal cognitive tests with Voice Biomarkers (Whisper AI) &amp; Vision AI—instant 1-page clinical report, no login or app installation required.
             </p>
 
             <div class="hero-cta-row">
               <button type="button" class="btn-glow-green" id="btnQuickStartSession">
-                <span>Start 7 Guided Tests</span>
+                <span>Start 7 AI Tests Now</span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
                   <line x1="5" y1="12" x2="19" y2="12" />
                   <polyline points="12 5 19 12 12 19" />
@@ -226,245 +226,168 @@
               </button>
 
               <button type="button" class="btn-outline-green" data-nav-target="doctors">
-                <span>Find Doctors</span>
+                <span>Find Specialist Doctors</span>
               </button>
             </div>
 
-            <!-- Compact 5 Domains & 3 Steps -->
-            <div class="hero-clinical-showcase">
-              <div class="hero-domains-card">
+            <!-- The 3-Stage Real-World AI Pipeline (Jury Showcase) -->
+            <div class="hero-clinical-showcase" style="margin-top:24px;">
+              <div class="hero-domains-card" style="margin-bottom:14px;">
                 <div class="hero-domains-card__header">
-                  <span class="hero-domains-card__title">5 Evaluated Domains</span>
-                  <span class="hero-domains-card__badge">Validated Battery</span>
+                  <span class="hero-domains-card__title">The 3-Stage Real-World AI Pipeline</span>
+                  <span class="hero-domains-card__badge" style="background:#ecfdf5;color:#065f46;">Clinical Protocol</span>
                 </div>
                 <div class="hero-domains-pills">
-                  <div class="domain-mini-chip"><strong>30%</strong><span>Memory Recall</span></div>
-                  <div class="domain-mini-chip"><strong>20%</strong><span>Verbal Fluency</span></div>
-                  <div class="domain-mini-chip"><strong>20%</strong><span>Clock Vision</span></div>
-                  <div class="domain-mini-chip"><strong>15%</strong><span>Orientation</span></div>
-                  <div class="domain-mini-chip"><strong>15%</strong><span>Trail Making</span></div>
+                  <div class="domain-mini-chip"><strong>Stage 1</strong><span>7 Multi-Modal Tests</span></div>
+                  <div class="domain-mini-chip"><strong>Stage 2</strong><span>Risk Stratification</span></div>
+                  <div class="domain-mini-chip"><strong>Stage 3</strong><span>1-Page PDF &amp; Care</span></div>
                 </div>
               </div>
 
               <div class="hero-journey-steps">
                 <div class="journey-step-item">
-                  <div class="journey-step-num">01</div>
+                  <div class="journey-step-num" style="background:#ecfdf5;color:#059669;font-weight:800;">S1</div>
                   <div>
-                    <h4>AI Voice Screening</h4>
-                    <p>Tailored questions based on age, education, and symptoms.</p>
+                    <h4 style="color:var(--text-dark);font-size:15px;margin:0 0 4px;">Stage 1: Multi-Modal Cognitive Testing (7 Tests)</h4>
+                    <p style="margin:0;font-size:13px;color:var(--text-mid);line-height:1.45;">
+                      <strong>🎙️ Voice Biomarkers (Whisper AI)</strong> captures spoken answers, measuring hesitation &amp; pauses. <strong>👁️ Vision AI (Clock-Drawing)</strong> verifies numbers placement &amp; hand accuracy. <strong>⏱️ Interactive Recall &amp; Reaction Time</strong> tracks latency.
+                    </p>
                   </div>
                 </div>
                 <div class="journey-step-item">
-                  <div class="journey-step-num">02</div>
+                  <div class="journey-step-num" style="background:#fef3c7;color:#d97706;font-weight:800;">S2</div>
                   <div>
-                    <h4>1-Page Clinical PDF</h4>
-                    <p>Instant outcome summary ready for your doctor.</p>
+                    <h4 style="color:var(--text-dark);font-size:15px;margin:0 0 4px;">Stage 2: Clinical Risk Stratification Engine</h4>
+                    <p style="margin:0;font-size:13px;color:var(--text-mid);line-height:1.45;">
+                      Multi-domain cognitive scoring across Memory (30%), Fluency (20%), Clock Vision (20%), Orientation (15%), and Trail Making (15%) to classify risk: 🟢 <strong>Normal</strong>, 🟡 <strong>Mild Cognitive Impairment (MCI)</strong>, or 🔴 <strong>High Clinical Risk</strong>.
+                    </p>
                   </div>
                 </div>
                 <div class="journey-step-item">
-                  <div class="journey-step-num">03</div>
+                  <div class="journey-step-num" style="background:#e0e7ff;color:#4f46e5;font-weight:800;">S3</div>
                   <div>
-                    <h4>Post-Visit Care</h4>
-                    <p>Prescription extraction, dose reminders &amp; follow-ups.</p>
+                    <h4 style="color:var(--text-dark);font-size:15px;margin:0 0 4px;">Stage 3: Doctor Summary &amp; Actionable Care</h4>
+                    <p style="margin:0;font-size:13px;color:var(--text-mid);line-height:1.45;">
+                      1-Click download of a <strong>One-Page Clinical PDF Report</strong> formatted for clinicians, plus verified Neurologists &amp; Memory Clinics directory with direct call buttons.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Right Column: Clean, Professional Single-Mode Card (Either Login OR Sign Up at a time) -->
+          <!-- Right Column: Direct Zero-Friction Patient Intake (No Login Needed) -->
           <div class="hero-full__right anim-item anim-d2">
-            <div class="scanner-card onboarding-card" id="onboardingFormCard">
-              <!-- Mode Toggle Tabs: Only Login OR Sign Up shown at a time -->
-              <div id="authModeSwitcherBar" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--bg-soft);padding:5px;border-radius:14px;border:1px solid var(--border-subtle);margin-bottom:18px;">
-                <button type="button" id="btnTabLogin" style="padding:10px 14px;border-radius:10px;border:none;font-weight:700;font-size:13.5px;cursor:pointer;background:var(--emerald-deep);color:#ffffff;transition:all 0.2s;">
-                  Login
-                </button>
-                <button type="button" id="btnTabSignup" style="padding:10px 14px;border-radius:10px;border:none;font-weight:700;font-size:13.5px;cursor:pointer;background:transparent;color:var(--text-mid);transition:all 0.2s;">
-                  Sign Up
-                </button>
+            <div class="scanner-card onboarding-card" id="onboardingFormCard" style="box-shadow:0 12px 36px rgba(16,185,129,0.12);border:1.5px solid var(--border-subtle);">
+              <div class="scanner-card__head" style="margin-bottom:12px;">
+                <div>
+                  <span class="card-step-tag" style="background:#ecfdf5;color:#059669;font-weight:700;">⚡ Instant Access · No Account Needed</span>
+                  <h3 id="signupCardHeading" style="margin-top:4px;font-size:20px;">Patient Screening Setup</h3>
+                </div>
+                <span class="badge-status" style="background:#10b981;color:#ffffff;font-size:11.5px;padding:3px 8px;border-radius:20px;">Zero Friction</span>
               </div>
 
-              <!-- MODE 1: RETURNING USER LOGIN (SHOWN BY DEFAULT FOR RETURNING USERS, CLEAN & SIMPLE) -->
-              <div id="guestLoginView">
-                <div class="scanner-card__head" style="margin-bottom:14px;">
-                  <div>
-                    <span class="card-step-tag">Returning User Access</span>
-                    <h3 style="margin-top:2px;">Login with Email</h3>
-                  </div>
-                </div>
+              <p style="margin:0 0 14px;font-size:13px;color:var(--text-mid);line-height:1.45;">
+                Enter patient name and age below. The 7-test screening battery begins immediately without any login or password.
+              </p>
 
-                <p style="margin:0 0 16px;font-size:13.5px;color:var(--text-mid);line-height:1.5;">
-                  Enter your registered email address to load your saved patient profile, cognitive test history, and reports directly from the database.
-                </p>
-
-                <div class="form-field" style="margin-bottom:16px;">
-                  <label for="inpQuickLoginEmail">Registered Email Address</label>
-                  <input
-                    type="text"
-                    id="inpQuickLoginEmail"
-                    name="yaadasht_login_email_field"
-                    autocomplete="off"
-                    spellcheck="false"
-                    placeholder="e.g. patient@example.com"
-                    style="padding:12px 14px;font-size:14px;"
-                  />
-                </div>
-
-                <button type="button" class="btn-run-full" id="btnQuickEmailLogin" style="margin-top:0;">
-                  <span>Login to Dashboard &rarr;</span>
-                </button>
-
-                <div style="text-align:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle);font-size:13px;color:var(--text-mid);">
-                  First time using Yaadasht?
-                  <button type="button" id="btnSwitchToSignupLink" style="background:none;border:none;color:var(--emerald-primary);font-weight:700;cursor:pointer;padding:0 4px;text-decoration:underline;">
-                    Create New Patient Account
-                  </button>
-                </div>
-              </div>
-
-              <!-- MODE 2: FIRST-TIME USER SIGN UP / PROFILE SETUP (SHOWN ONLY WHEN SIGN UP OR EDIT IS SELECTED) -->
-              <div id="guestSignupView" class="hidden">
-                <div class="scanner-card__head">
-                  <div>
-                    <span class="card-step-tag" id="signupCardStepTag">First-Time Patient Registration</span>
-                    <h3 id="signupCardHeading">Create Patient Profile</h3>
-                  </div>
-                  <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" class="mode-pill hidden" id="btnCancelEditProfile">Cancel</button>
-                  </div>
-                </div>
-
+              <div id="guestSignupView">
                 <div class="form-grid-2">
                   <div class="form-field" style="grid-column: 1 / -1;">
-                    <label for="inpPersonEmail">Email Address</label>
-                    <input
-                      type="text"
-                      id="inpPersonEmail"
-                      name="yaadasht_signup_email_field"
-                      autocomplete="off"
-                      spellcheck="false"
-                      value=""
-                      placeholder="e.g. patient@example.com"
-                    />
-                  </div>
-                  <div class="form-field" style="grid-column: 1 / -1;">
-                    <label for="inpPersonName">Patient Full Name</label>
+                    <label for="inpPersonName" style="font-weight:700;">Patient Full Name</label>
                     <input
                       type="text"
                       id="inpPersonName"
                       name="yaadasht_signup_name_field"
                       autocomplete="off"
-                      value=""
-                      placeholder="Patient full name"
+                      value="Arslan Ahmad"
+                      placeholder="e.g. Arslan Ahmad / Mother / Baba"
+                      style="font-size:14.5px;padding:11px 14px;border:1.5px solid var(--border-subtle);"
                     />
                   </div>
+
+                  <div class="form-field">
+                    <label for="inpPersonAge" style="font-weight:700;">Age</label>
+                    <input type="number" id="inpPersonAge" value="68" placeholder="e.g. 68" min="18" max="120" style="padding:11px 14px;" />
+                  </div>
+
+                  <div class="form-field">
+                    <label for="inpPersonGender" style="font-weight:700;">Gender</label>
+                    <select id="inpPersonGender" style="padding:11px 14px;">
+                      <option value="male" selected>Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="inpPersonCity" style="font-weight:700;">City</label>
+                    <select id="inpPersonCity" style="padding:11px 14px;">
+                      <option value="Lahore" selected>Lahore</option>
+                      <option value="Karachi">Karachi</option>
+                      <option value="Islamabad">Islamabad</option>
+                      <option value="Rawalpindi">Rawalpindi</option>
+                      <option value="Faisalabad">Faisalabad</option>
+                      <option value="Peshawar">Peshawar</option>
+                      <option value="Multan">Multan</option>
+                      <option value="Quetta">Quetta</option>
+                    </select>
+                  </div>
+
+                  <div class="form-field">
+                    <label for="inpPersonEducation" style="font-weight:700;">Education</label>
+                    <select id="inpPersonEducation" style="padding:11px 14px;">
+                      <option value="primary">Primary</option>
+                      <option value="secondary" selected>Secondary / Matric</option>
+                      <option value="graduate">Graduate</option>
+                      <option value="postgraduate">Postgraduate</option>
+                      <option value="no_formal">No Formal</option>
+                    </select>
+                  </div>
+
+                  <div class="form-field" style="grid-column: 1 / -1;">
+                    <label for="inpPersonOccupation">Occupation / Background</label>
+                    <input type="text" id="inpPersonOccupation" value="Retired" placeholder="e.g. Retired, Teacher, Farmer" style="padding:10px 14px;" />
+                  </div>
+
+                  <div class="form-field hidden" style="grid-column: 1 / -1;">
+                    <label for="inpPersonEmail">Email (Optional)</label>
+                    <input type="text" id="inpPersonEmail" value="" placeholder="Optional — leave empty for instant screening" />
+                  </div>
+                  <input type="hidden" id="inpFamilyHistory" value="false" />
+                  <input type="hidden" id="inpSymptomDuration" value="6" />
                 </div>
 
-                <!-- Shown automatically when Email or Name already exists in Database -->
-                <div id="existingUserDetectedBox" class="hidden" style="background:#ecfdf5;border:2px solid #10b981;border-radius:16px;padding:16px;margin:12px 0;">
-                  <span class="verified-pill" style="margin-bottom:6px;display:inline-block;">✓ Account Already Exists</span>
-                  <h4 id="existingUserDetectedTitle" style="margin:4px 0 6px;font-size:16px;color:var(--text-dark);">This Email is Already Registered!</h4>
-                  <p id="existingUserDetectedText" style="margin:0 0 12px;font-size:13.5px;color:var(--text-mid);line-height:1.45;">
-                    You do not need to fill the form again. Click below to login directly to your saved profile.
-                  </p>
-                  <button type="button" class="btn-run-full" id="btnLoginDetectedUser" style="margin-top:0;">
-                    <span id="btnLoginDetectedUserLabel">Login to Saved Account &rarr;</span>
-                  </button>
+                <div class="form-field" style="margin-top:10px;">
+                  <label style="font-size:12.5px;color:var(--text-mid);font-weight:600;">Observed Memory Concerns (Optional):</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:12px;">
+                    <label class="consent-row" style="padding:3px 8px;"><input type="checkbox" class="chk-symptom" value="repeating_questions" checked /> <span>Repeating questions</span></label>
+                    <label class="consent-row" style="padding:3px 8px;"><input type="checkbox" class="chk-symptom" value="forgetting_recent_events" checked /> <span>Recent memory lapses</span></label>
+                    <label class="consent-row" style="padding:3px 8px;"><input type="checkbox" class="chk-symptom" value="misplacing_items" /> <span>Misplacing items</span></label>
+                    <label class="consent-row" style="padding:3px 8px;"><input type="checkbox" class="chk-symptom" value="date_time_confusion" /> <span>Date/time confusion</span></label>
+                  </div>
                 </div>
 
-                <div id="newPatientExtraFieldsWrap">
-                  <div class="form-grid-2" style="margin-top:8px;">
-                    <div class="form-field">
-                      <label for="inpPersonAge">Age</label>
-                      <input type="number" id="inpPersonAge" value="" placeholder="e.g. 68" min="18" max="120" />
-                    </div>
-                    <div class="form-field">
-                      <label for="inpPersonGender">Gender</label>
-                      <select id="inpPersonGender">
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                    <div class="form-field">
-                      <label for="inpPersonCity">City</label>
-                      <select id="inpPersonCity">
-                        <option value="Lahore">Lahore</option>
-                        <option value="Karachi">Karachi</option>
-                        <option value="Islamabad">Islamabad</option>
-                        <option value="Rawalpindi">Rawalpindi</option>
-                        <option value="Faisalabad">Faisalabad</option>
-                        <option value="Peshawar">Peshawar</option>
-                        <option value="Multan">Multan</option>
-                        <option value="Quetta">Quetta</option>
-                      </select>
-                    </div>
-                    <div class="form-field">
-                      <label for="inpPersonEducation">Education</label>
-                      <select id="inpPersonEducation">
-                        <option value="no_formal">No Formal</option>
-                        <option value="primary">Primary</option>
-                        <option value="secondary" selected>Secondary / Matric</option>
-                        <option value="graduate">Graduate</option>
-                        <option value="postgraduate">Postgraduate</option>
-                      </select>
-                    </div>
-                    <div class="form-field">
-                      <label for="inpPersonOccupation">Occupation</label>
-                      <input type="text" id="inpPersonOccupation" value="" placeholder="e.g. Teacher, Retired" />
-                    </div>
-                    <div class="form-field">
-                      <label for="inpFamilyHistory">Family History</label>
-                      <select id="inpFamilyHistory">
-                        <option value="false">No</option>
-                        <option value="true">Yes</option>
-                      </select>
-                    </div>
-                    <div class="form-field" style="grid-column: 1 / -1;">
-                      <label for="inpSymptomDuration">Symptoms (Months)</label>
-                      <input type="number" id="inpSymptomDuration" value="6" min="0" max="240" />
-                    </div>
-                  </div>
+                <div class="consent-checklist" style="margin-top:10px;">
+                  <label class="consent-row" style="padding:6px 10px;background:#f0fdf4;border-radius:8px;">
+                    <input type="checkbox" id="chkConsentAudio" checked />
+                    <input type="checkbox" id="chkConsentData" checked class="hidden" />
+                    <span style="font-size:12.5px;">✓ I consent to voice/drawing analysis (Screening aid only · Not a medical diagnosis).</span>
+                  </label>
+                </div>
 
-                  <div class="form-field" style="margin-top:6px;">
-                    <label>Observed Symptoms:</label>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:12.5px;">
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="repeating_questions" /> <span>Repeating questions</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="forgetting_recent_events" /> <span>Recent memory loss</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="misplacing_items" /> <span>Misplacing items</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="date_time_confusion" /> <span>Date confusion</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-symptom" value="word_finding_difficulty" /> <span>Word difficulty</span></label>
-                    </div>
-                  </div>
+                <button type="button" class="btn-glow-green" id="btnSaveProfileAndStart" style="width:100%;justify-content:center;font-size:15.5px;padding:14px;margin-top:12px;">
+                  <span>🧠 Launch 7 Multi-Modal AI Tests &rarr;</span>
+                </button>
 
-                  <div class="form-field" style="margin-top:6px;">
-                    <label>Conditions:</label>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:12.5px;">
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="hypertension" /> <span>BP</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="diabetes" /> <span>Diabetes</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="hearing_or_vision" /> <span>Hearing/Vision</span></label>
-                      <label class="consent-row" style="padding:3px 7px;"><input type="checkbox" class="chk-condition" value="stroke_history" /> <span>Stroke</span></label>
-                    </div>
-                  </div>
-
-                  <div class="consent-checklist" style="margin-top:8px;">
-                    <label class="consent-row" style="padding:6px 10px;">
-                      <input type="checkbox" id="chkConsentAudio" checked />
-                      <input type="checkbox" id="chkConsentData" checked class="hidden" />
-                      <span>I consent to voice/drawing capture and understand this is a screening aid only.</span>
-                    </label>
-                  </div>
-
-                  <button type="button" class="btn-run-full" id="btnSaveProfileAndStart">
-                    <span>Sign Up &amp; Generate AI Test &rarr;</span>
+                <!-- Subtle Lookup for returning demo users -->
+                <div style="text-align:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-subtle);">
+                  <button type="button" id="btnToggleReturningUser" style="background:none;border:none;color:var(--text-mid);font-size:12px;cursor:pointer;text-decoration:underline;">
+                    Lookup previously saved patient session
                   </button>
-
-                  <div id="signupBottomSwitchWrap" style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-subtle);font-size:13px;color:var(--text-mid);">
-                    Already registered?
-                    <button type="button" id="btnSwitchToLoginLink" style="background:none;border:none;color:var(--emerald-primary);font-weight:700;cursor:pointer;padding:0 4px;text-decoration:underline;">
-                      Login with Email
-                    </button>
+                  <div id="guestLoginView" class="hidden" style="margin-top:8px;">
+                    <input type="text" id="inpQuickLoginEmail" placeholder="Enter patient name or email" style="padding:8px 12px;font-size:13px;width:70%;display:inline-block;margin-right:6px;" />
+                    <button type="button" class="mode-pill" id="btnQuickEmailLogin" style="padding:8px 14px;">Load</button>
                   </div>
                 </div>
               </div>
@@ -478,14 +401,16 @@
            ======================================================= -->
       <section class="page-section" id="section-session" data-page="session">
         <div class="scanner-clean-layout">
-          <!-- Progress Dots (1 of 5) -->
+          <!-- Progress Dots (1 of 7) -->
           <div class="scanner-steps-bar">
             <div class="test-progress-dots" id="testProgressDots">
               <button type="button" class="step-pill active" data-step="1"><span class="step-num">1</span><span>Orientation</span></button>
               <button type="button" class="step-pill" data-step="2"><span class="step-num">2</span><span>Immediate Recall</span></button>
               <button type="button" class="step-pill" data-step="3"><span class="step-num">3</span><span id="stepPill3Text">Verbal Fluency</span></button>
               <button type="button" class="step-pill" data-step="4"><span class="step-num">4</span><span>Picture Story</span></button>
-              <button type="button" class="step-pill" data-step="5"><span class="step-num">5</span><span>Delayed Recall</span></button>
+              <button type="button" class="step-pill" data-step="5"><span class="step-num">5</span><span>Clock Drawing</span></button>
+              <button type="button" class="step-pill" data-step="6"><span class="step-num">6</span><span>Connect Dots</span></button>
+              <button type="button" class="step-pill" data-step="7"><span class="step-num">7</span><span>Delayed Recall</span></button>
             </div>
           </div>
 
@@ -669,17 +594,58 @@
               </div>
             </div>
 
-            <!-- TEST 5: WORD RECALL (DELAYED RECALL VIA VOICE) -->
+            <!-- TEST 5: CLOCK DRAWING (CANVAS + VISION CHECKLIST) -->
             <div class="test-pane hidden" id="testPane5">
+              <div class="clock-test-grid">
+                <div class="clock-canvas-box">
+                  <div class="clock-canvas-header">
+                    <strong>Draw a Clock Showing <span id="t5TargetTime">11:10</span></strong>
+                    <div class="clock-canvas-actions">
+                      <button type="button" class="mode-pill" id="btnClearClockCanvas">Clear Canvas</button>
+                    </div>
+                  </div>
+                  <canvas id="clockCanvas" width="280" height="280" class="drawing-canvas"></canvas>
+                  <button type="button" class="btn-upload-main" id="btnRunClockVisionCheck" style="margin-top: 10px;width:100%;justify-content:center;">
+                    🔍 Analyze Drawn Clock with AI Vision
+                  </button>
+                </div>
+
+                <div class="clock-checklist-box">
+                  <h4>Caregiver Confirmation Checklist (Required Before Saving)</h4>
+                  <p class="scanner-card__hint">Draw the clock on the canvas and click "Analyze Drawn Clock with AI Vision", or verify the 6 elements manually:</p>
+                  <label class="consent-row"><input type="checkbox" id="chkClockCircle" /> <span>1. Closed circle drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockNumbers" /> <span>2. All 12 numbers present</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockOrder" /> <span>3. Numbers in correct order</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockSpacing" /> <span>4. Numbers spaced evenly</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTwoHands" /> <span>5. Two clock hands drawn</span></label>
+                  <label class="consent-row"><input type="checkbox" id="chkClockTimeMatch" /> <span>6. Hands point to target time (<span id="chkClockTargetLabel">11:10</span>)</span></label>
+                </div>
+              </div>
+            </div>
+
+            <!-- TEST 6: DOT CONNECTING (1 TO 12 TOUCH GAME) -->
+            <div class="test-pane hidden" id="testPane6">
+              <div class="dot-game-header">
+                <div>
+                  <strong>Tap Numbered Dots 1 to 12 in Order (1 &rarr; 2 &rarr; 3 ... &rarr; 12)</strong>
+                  <p>Progress: <strong id="dotGameProgress">0 / 12</strong> · Elapsed: <strong id="dotGameTime">0.0s</strong> · Errors: <strong id="dotGameErrors">0</strong></p>
+                </div>
+                <button type="button" class="mode-pill" id="btnResetDotGame">Restart Dot Game</button>
+              </div>
+              <div class="dot-game-board" id="dotGameBoard"></div>
+            </div>
+
+            <!-- TEST 7: WORD RECALL (DELAYED RECALL VIA VOICE) -->
+            <div class="test-pane hidden" id="testPane7">
               <div class="word-bank-display">
                 <strong>Delayed Word Recall (Memory Check)</strong>
-                <p id="t5InstructionText">Without looking at the earlier cards, speak the 5 words that were presented in Test 2:</p>
+                <p id="t7InstructionText">Without looking at the earlier cards, speak the 5 words that were presented in Test 2:</p>
               </div>
               <div class="form-field" style="margin-top: 16px;">
                 <label>Words Recalled Now (Captured via Voice):</label>
                 <div class="input-with-mic">
-                  <input type="text" id="t5Response" value="" placeholder="Speak the words you remember from Test 2..." />
-                  <button type="button" class="btn-field-mic" data-voice-field="t5Response">🎙️ Speak Words</button>
+                  <input type="text" id="t7Response" value="" placeholder="Speak the words you remember from Test 2..." />
+                  <button type="button" class="btn-field-mic" data-voice-field="t7Response">🎙️ Speak Words</button>
                 </div>
               </div>
             </div>
@@ -842,7 +808,7 @@
             <div class="scanner-card">
               <div class="scanner-card__head">
                 <div>
-                  <h3>1. Doctor's Report &amp; Medicines</h3>
+                  <h3>1. Doctor's Report &amp; AI Summary</h3>
                 </div>
               </div>
 
@@ -850,82 +816,98 @@
                 <div class="form-field">
                   <label>Prescription / Report Image (Optional)</label>
                   <input type="file" id="inpDoctorReportFile" accept="image/*,.pdf" />
+                  <div id="docImagePreviewBox" class="hidden" style="margin-top:8px;">
+                    <img id="docImagePreview" alt="Uploaded prescription preview" style="max-height:140px;border-radius:10px;border:1px solid #a7f3d0;" />
+                  </div>
                 </div>
                 <div class="form-field">
                   <label>Follow-Up Retest Interval (Days)</label>
                   <input type="number" id="inpFollowupDays" value="30" min="7" max="180" />
                 </div>
                 <div class="form-field" style="grid-column: 1 / -1;">
-                  <label>Doctor's Findings &amp; Prescription Notes</label>
-                  <input type="text" id="inpDocFindings" value="" placeholder="Enter doctor's findings or prescription notes..." />
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+                    <label style="margin:0;">Doctor's Findings &amp; Prescription Notes</label>
+                    <button type="button" class="btn-outline-green" id="btnAiGenerateFindings" style="padding:4px 12px;font-size:12.5px;width:auto;">
+                      ✨ AI Read Report &amp; Auto-Fill
+                    </button>
+                  </div>
+                  <input type="text" id="inpDocFindings" value="" placeholder="Optional — leave blank or click 'AI Read Report & Auto-Fill' to extract from image" />
                 </div>
               </div>
 
               <button type="button" class="btn-outline-green" id="btnUploadDoctorDoc">
-                📤 Save Report &amp; Extract Medicines
+                📤 Save Report &amp; Generate AI Summary
               </button>
 
-              <hr style="border:none;border-top:1px solid var(--border-subtle);" />
-
-              <h4>Confirm Prescribed Medicine</h4>
-
-              <div class="form-grid-2">
-                <div class="form-field">
-                  <label>Medicine Name</label>
-                  <input type="text" id="inpMedName" value="" placeholder="e.g. Donepezil" />
-                </div>
-                <div class="form-field">
-                  <label>Prescribed Dose</label>
-                  <input type="text" id="inpMedDose" value="" placeholder="e.g. 5mg" />
-                </div>
-                <div class="form-field">
-                  <label>Times Per Day</label>
-                  <input type="number" id="inpMedFreq" value="1" min="1" max="6" />
-                </div>
-                <div class="form-field">
-                  <label>Reminder Time (HH:MM)</label>
-                  <input type="text" id="inpMedTime" value="21:00" />
-                </div>
+              <div id="docExtractionResultBox" class="report-block report-block--highlight hidden" style="margin-top:12px;">
+                <strong>AI Report Summary &amp; Care Scenario:</strong>
+                <div id="docExtractionResultText" style="margin:6px 0 0;font-size:13.5px;"></div>
               </div>
 
-              <label class="consent-row">
-                <input type="checkbox" id="chkConfirmMedicine" />
-                <strong>I confirm this medicine matches the doctor's prescription.</strong>
-              </label>
+              <div id="medicineConfirmBlock" class="hidden">
+                <hr style="border:none;border-top:1px solid var(--border-subtle);" />
 
-              <button type="button" class="btn-run-full" id="btnSaveConfirmedMedicine">
-                ✓ Confirm &amp; Schedule Medicine Reminder
-              </button>
+                <h4>Confirm Prescribed Medicine</h4>
+
+                <div class="form-grid-2">
+                  <div class="form-field">
+                    <label>Medicine Name</label>
+                    <input type="text" id="inpMedName" value="" placeholder="e.g. Donepezil" />
+                  </div>
+                  <div class="form-field">
+                    <label>Prescribed Dose</label>
+                    <input type="text" id="inpMedDose" value="" placeholder="e.g. 5mg" />
+                  </div>
+                  <div class="form-field">
+                    <label>Times Per Day</label>
+                    <input type="number" id="inpMedFreq" value="1" min="1" max="6" />
+                  </div>
+                  <div class="form-field">
+                    <label>Reminder Time (HH:MM)</label>
+                    <input type="text" id="inpMedTime" value="21:00" />
+                  </div>
+                </div>
+
+                <label class="consent-row">
+                  <input type="checkbox" id="chkConfirmMedicine" />
+                  <strong>I confirm this medicine matches the doctor's prescription.</strong>
+                </label>
+
+                <button type="button" class="btn-run-full" id="btnSaveConfirmedMedicine">
+                  ✓ Confirm &amp; Schedule Medicine Reminder
+                </button>
+              </div>
             </div>
 
-            <!-- RIGHT: POST-VISIT ADAPTIVE RETEST, DAILY MEDICINE LOG & MONTHLY REPORT -->
+            <!-- RIGHT: AI REPORT SCENARIO, RECOMMENDED FOLLOW-UP TESTS & MONTHLY REPORT -->
             <div class="scanner-card">
               <div class="report-block report-block--highlight" style="margin-bottom:14px;">
-                <h4>🧠 Post-Visit Follow-Up Test</h4>
-                <p style="font-size:13.5px;color:var(--text-mid);margin-bottom:10px;">
-                  Follow-up test adapted to previous results and doctor's notes.
+                <h4>🧠 Report-Based Follow-Up Tests</h4>
+                <p id="followupScenarioSubtitle" style="font-size:13.5px;color:var(--text-mid);margin-bottom:10px;">
+                  Upload a doctor's or dementia report on the left — AI will summarize key findings and recommend which cognitive follow-up tests are needed.
                 </p>
+                <div id="recommendedTestsList" class="hidden" style="margin-bottom:12px;"></div>
                 <button type="button" class="btn-glow-green" id="btnStartAdaptiveFollowupTest" style="width:100%;justify-content:center;">
-                  <span>▶ Start Follow-Up Test</span>
+                  <span>▶ Start Recommended Follow-Up Test</span>
                 </button>
               </div>
               <div class="scanner-card__head">
                 <div>
-                  <h3>2. Today's Medicine Log</h3>
+                  <h3>2. Post-Visit Summary Report</h3>
                 </div>
                 <button type="button" class="btn-upload-main" id="btnGenerateMonthlySummary">
                   📊 Monthly Summary
                 </button>
               </div>
 
-              <div id="confirmedMedicinesList" class="report-findings-list">
+              <div id="confirmedMedicinesList" class="report-findings-list hidden">
                 <div class="finding-card">
                   <strong>No confirmed medicines yet</strong>
                   <span>Confirm a medicine on the left to start logging daily doses.</span>
                 </div>
               </div>
 
-              <div id="medicineLogFeedback" class="scanner-card__hint"></div>
+              <div id="medicineLogFeedback" class="scanner-card__hint hidden"></div>
 
               <div class="report-block report-block--highlight hidden" id="monthlySummaryBox">
                 <h4>Monthly Summary Report</h4>
@@ -994,6 +976,6 @@
     </footer>
   </div>
 
-  <script type="module" src="/assets/js/main.js?v=19"></script>
+  <script type="module" src="/assets/js/main.js?v=23"></script>
 </body>
 </html>

@@ -15,7 +15,10 @@ __pycache__/
 *.env*
 .env.local
 .env.*.local
-.env.example
+!.env.example
+
+# Vercel Cache & Output
+.vercel/
 
 # Tracking & Private Development Logs (Confidential)
 TRACKING_ROADMAP.md

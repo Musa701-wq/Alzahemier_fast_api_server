@@ -51,8 +51,61 @@ let currentPerson = null;
 let currentSession = null;
 let currentCompletedSession = null;
 let currentReport = null;
+let latestDocId = null;
 let currentStep = 1;
 let sessionStartTimeMs = Date.now();
+
+function renderPersonMedicines(meds = []) {
+  renderConfirmedMedicines(meds || [], async (medId, statusVal) => {
+    const logRes = await logMedicineDose({
+      medicine_id: medId,
+      scheduled_time: "21:00",
+      status: statusVal,
+    });
+    const fb = document.getElementById("medicineLogFeedback");
+    if (fb) {
+      fb.textContent = logRes.gentle_reminder
+        ? `Logged as ${statusVal}: ${logRes.gentle_reminder}`
+        : `Dose marked as TAKEN ✓ (${new Date(logRes.logged_at).toLocaleTimeString()})`;
+    }
+  });
+}
+
+function resetPostVisitUI() {
+  latestDocId = null;
+  renderPersonMedicines([]);
+  const prevBox = document.getElementById("docImagePreviewBox");
+  const prevImg = document.getElementById("docImagePreview");
+  if (prevImg) prevImg.src = "";
+  if (prevBox) prevBox.classList.add("hidden");
+
+  const resBox = document.getElementById("docExtractionResultBox");
+  const resText = document.getElementById("docExtractionResultText");
+  if (resText) resText.innerHTML = "";
+  if (resBox) resBox.classList.add("hidden");
+
+  const fileInp = document.getElementById("inpDoctorReportFile");
+  if (fileInp) fileInp.value = "";
+  const findingsInp = document.getElementById("inpDocFindings");
+  if (findingsInp) findingsInp.value = "";
+  const medNameInp = document.getElementById("inpMedName");
+  if (medNameInp) medNameInp.value = "";
+  const medDoseInp = document.getElementById("inpMedDose");
+  if (medDoseInp) medDoseInp.value = "";
+  const medFreqInp = document.getElementById("inpMedFreq");
+  if (medFreqInp) medFreqInp.value = "1";
+  const medTimeInp = document.getElementById("inpMedTime");
+  if (medTimeInp) medTimeInp.value = "21:00";
+  const chkMed = document.getElementById("chkConfirmMedicine");
+  if (chkMed) chkMed.checked = false;
+  const fb = document.getElementById("medicineLogFeedback");
+  if (fb) fb.textContent = "";
+
+  const sumBox = document.getElementById("monthlySummaryBox");
+  const sumTxt = document.getElementById("monthlySummaryText");
+  if (sumTxt) sumTxt.textContent = "";
+  if (sumBox) sumBox.classList.add("hidden");
+}
 
 // Voice Examiner & Verbal Speech Interaction State
 let voiceGuideActive = true;
@@ -1286,21 +1339,7 @@ async function bootstrapAccountAndData() {
           }
         }
 
-        if (meds.length > 0) {
-          renderConfirmedMedicines(meds, async (medId, statusVal) => {
-            const logRes = await logMedicineDose({
-              medicine_id: medId,
-              scheduled_time: "21:00",
-              status: statusVal,
-            });
-            const fb = document.getElementById("medicineLogFeedback");
-            if (fb) {
-              fb.textContent = logRes.gentle_reminder
-                ? `Logged as ${statusVal}: ${logRes.gentle_reminder}`
-                : `Dose marked as TAKEN ✓ (${new Date(logRes.logged_at).toLocaleTimeString()})`;
-            }
-          });
-        }
+        renderPersonMedicines(meds);
       } else {
         renderHomePatientDashboard(null, []);
       }
@@ -1426,6 +1465,7 @@ async function performQuickLogin({ email = "", name = "" } = {}) {
     toggleExistingUserPromptUI(null);
 
     if (res.person && res.person.id) {
+      resetPostVisitUI();
       currentPerson = res.person;
       populatePersonForm(res.person);
       const sessions = (await listSessions(res.person.id)) || [];
@@ -1449,6 +1489,7 @@ async function performQuickLogin({ email = "", name = "" } = {}) {
         currentStep = 1;
       }
 
+      renderPersonMedicines(meds);
       renderHomePatientDashboard(res.person, sessions, meds);
     } else {
       await bootstrapAccountAndData();
@@ -1498,23 +1539,21 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
     const guestViewVisible = !document.getElementById("homeGuestView")?.classList.contains("hidden");
 
     if (!getAuthToken() || (rawEmail && rawEmail.includes("@") && rawEmail !== currentEmail)) {
-      if (!rawEmail || !rawEmail.includes("@")) {
-        showAILoadingOverlay(false);
-        alert("Please enter your Email Address so your profile and AI tests can be saved in MongoDB.");
-        document.getElementById("inpPersonEmail")?.focus();
-        return false;
-      }
+      const effectiveEmail = (rawEmail && rawEmail.includes("@"))
+        ? rawEmail
+        : `guest_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}@yaadasht.local`;
       const emailRes = await emailAccessUser({
-        email: rawEmail,
+        email: effectiveEmail,
         mode: "register",
-        full_name: rawName || rawEmail.split("@")[0],
+        full_name: rawName || "Demo Patient",
       });
       setAuthToken(emailRes.access_token);
-      localStorage.setItem("yaadasht_caregiver_email", emailRes.email || rawEmail);
+      localStorage.setItem("yaadasht_caregiver_email", emailRes.email || effectiveEmail);
       localStorage.setItem("yaadasht_caregiver_pass", "password123");
 
       // If this user already existed in MongoDB and was on the guest screen, log them straight into their Home Dashboard!
       if (emailRes.already_registered && emailRes.person && guestViewVisible) {
+        resetPostVisitUI();
         currentPerson = emailRes.person;
         populatePersonForm(currentPerson);
         const existingSessions = (await listSessions(currentPerson.id)) || [];
@@ -1532,6 +1571,7 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
           currentSession = openList[openList.length - 1];
           applySessionPromptsToUI(currentSession);
         }
+        renderPersonMedicines(meds);
         renderHomePatientDashboard(currentPerson, existingSessions, meds);
         switchSection("home");
         return false;
@@ -1547,7 +1587,7 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
         sessionStartTimeMs = Date.now();
         clearAllTestInputsForNewSession(currentSession.item_prompts || {});
         applySessionPromptsToUI(currentSession);
-        const resumeStep = Math.min(5, (currentSession.results || []).length + 1);
+        const resumeStep = Math.min(7, (currentSession.results || []).length + 1);
         currentStep = resumeStep;
         renderActiveTestStep(resumeStep, currentSession.item_prompts || {});
         renderHomePatientDashboard(currentPerson, existingSessions);
@@ -1556,22 +1596,15 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
     }
 
     // 3. Validate patient profile fields when creating or updating profile
-    if (!rawName || !rawAge) {
-      showAILoadingOverlay(false);
-      alert("Please enter the patient's Full Name and Age before starting the personalized test.");
-      switchSection("home");
-      document.getElementById("inpPersonName")?.focus();
-      return false;
+    const finalName = rawName || "Arslan Ahmad";
+    const finalAge = Number(rawAge) || 68;
+
+    const chkAudio = document.getElementById("chkConsentAudio");
+    if (chkAudio && !chkAudio.checked) {
+      chkAudio.checked = true;
     }
 
-    const chkAudio = document.getElementById("chkConsentAudio")?.checked;
-    if (!chkAudio) {
-      showAILoadingOverlay(false);
-      alert("Please accept the consent checkbox before starting the cognitive tests.");
-      return false;
-    }
-
-    const age = Number(rawAge);
+    const age = finalAge;
     const gender = document.getElementById("inpPersonGender")?.value || currentPerson?.gender || "male";
     const city = document.getElementById("inpPersonCity")?.value || currentPerson?.city || "Lahore";
     const education_level =
@@ -1589,7 +1622,7 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
 
     currentPerson = await createOrUpdatePerson(
       {
-        name: rawName,
+        name: finalName,
         age,
         gender,
         city,
@@ -1627,7 +1660,7 @@ async function ensurePersonAndSessionReady(sessionMode = "baseline") {
     const prompts = currentSession.item_prompts || {};
     clearAllTestInputsForNewSession(prompts);
     applySessionPromptsToUI(currentSession);
-    const nextStep = Math.min(5, (currentSession.results || []).length + 1);
+    const nextStep = Math.min(7, (currentSession.results || []).length + 1);
     currentStep = nextStep;
     renderActiveTestStep(nextStep, prompts);
 
@@ -1858,9 +1891,37 @@ async function saveCurrentStepResult(stepNum) {
   } else if (stepNum === 5) {
     payload = {
       test_number: 5,
+      test_type: "clock_drawing",
+      answers: {
+        checklist: {
+          closed_circle: Boolean(document.getElementById("chkClockCircle")?.checked),
+          twelve_numbers: Boolean(document.getElementById("chkClockNumbers")?.checked),
+          correct_order: Boolean(document.getElementById("chkClockOrder")?.checked),
+          correct_spacing: Boolean(document.getElementById("chkClockSpacing")?.checked),
+          two_hands: Boolean(document.getElementById("chkClockTwoHands")?.checked),
+          hands_match_time: Boolean(document.getElementById("chkClockTimeMatch")?.checked),
+        },
+      },
+      stroke_data: { strokes: clockStrokes },
+      drawing_path: `drawings/${currentSession.id}_clock.png`,
+    };
+  } else if (stepNum === 6) {
+    const connectedDotsCount = Math.min(12, dotNextExpected - 1);
+    payload = {
+      test_number: 6,
+      test_type: "dot_connecting",
+      answers: {
+        connected_dots: connectedDotsCount,
+        errors: dotErrors,
+      },
+      duration_seconds: dotDurationSec || 42.0,
+    };
+  } else if (stepNum === 7) {
+    payload = {
+      test_number: 7,
       test_type: "word_recall_delayed",
-      raw_response: document.getElementById("t5Response")?.value || "",
-      audio_path: `audio/${currentSession.id}_test5.webm`,
+      raw_response: document.getElementById("t7Response")?.value || "",
+      audio_path: `audio/${currentSession.id}_test7.webm`,
     };
   }
 
@@ -1875,7 +1936,7 @@ async function saveCurrentStepResult(stepNum) {
     }
     const persistBadge = document.getElementById("sessionPersistenceBadge");
     if (persistBadge) {
-      persistBadge.textContent = `Saved in MongoDB (${currentSession.results.length}/5 Done)`;
+      persistBadge.textContent = `Completed ${currentSession.results.length} of 7 Tests`;
     }
   }
   const indicator = document.getElementById("sessionSaveIndicator");
@@ -2072,14 +2133,35 @@ function initEventListeners() {
           if (!ok) return;
         }
       }
+      if (targetSec === "postvisit") {
+        if (currentPerson && currentPerson.id) {
+          try {
+            const meds = (await listMedicines(currentPerson.id)) || [];
+            renderPersonMedicines(meds);
+          } catch (_e) { }
+        } else {
+          resetPostVisitUI();
+        }
+      }
       switchSection(targetSec);
     });
   });
 
   document.querySelectorAll("[data-nav-target]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("click", async (e) => {
       e.preventDefault();
-      switchSection(btn.dataset.navTarget);
+      const targetSec = btn.dataset.navTarget;
+      if (targetSec === "postvisit") {
+        if (currentPerson && currentPerson.id) {
+          try {
+            const meds = (await listMedicines(currentPerson.id)) || [];
+            renderPersonMedicines(meds);
+          } catch (_e) { }
+        } else {
+          resetPostVisitUI();
+        }
+      }
+      switchSection(targetSec);
     });
   });
 
@@ -2137,20 +2219,13 @@ function initEventListeners() {
     handleStepTransition(nextStep);
     switchSection("session");
   };
-  // Hero "Start 7 Guided Tests" button: If not logged in yet, switch to Sign Up tab or start if fields filled
+  // Hero "Start 7 Guided Tests" button: Zero-Friction direct launch
   document.getElementById("btnQuickStartSession")?.addEventListener("click", async () => {
-    if (currentPerson && currentPerson.id) {
-      await startBaselineFlow();
-      return;
-    }
-    const rawName = document.getElementById("inpPersonName")?.value.trim() || "";
-    const rawAge = document.getElementById("inpPersonAge")?.value.trim() || "";
-    if (rawName && rawAge) {
-      await startBaselineFlow();
-    } else {
-      setGuestAuthTabMode("signup");
-      document.getElementById("inpPersonEmail")?.focus();
-    }
+    await startBaselineFlow();
+  });
+  document.getElementById("btnToggleReturningUser")?.addEventListener("click", () => {
+    const box = document.getElementById("guestLoginView");
+    if (box) box.classList.toggle("hidden");
   });
   document.getElementById("btnSaveProfileAndStart")?.addEventListener("click", startBaselineFlow);
   document.getElementById("btnDashStartBaseline")?.addEventListener("click", startBaselineFlow);
@@ -2197,6 +2272,7 @@ function initEventListeners() {
     currentCompletedSession = null;
     currentReport = null;
     toggleExistingUserPromptUI(null);
+    resetPostVisitUI();
 
     ["inpPersonEmail", "inpPersonName", "inpPersonAge", "inpPersonOccupation", "inpQuickLoginEmail"].forEach((id) => {
       const el = document.getElementById(id);
@@ -2354,7 +2430,7 @@ function initEventListeners() {
       const saved = await saveCurrentStepResult(currentStep);
       if (!saved) return;
 
-      if (currentStep < 5) {
+      if (currentStep < 7) {
         handleStepTransition(currentStep + 1);
       } else {
         showAILoadingOverlay(true);
@@ -2379,7 +2455,7 @@ function initEventListeners() {
           renderHomePatientDashboard(currentPerson, allSessions, meds);
           switchSection("result");
           if (voiceGuideActive) {
-            speakInstruction(5, "All five cognitive tests completed. Your screening outcome is ready.");
+            speakInstruction(7, "All seven cognitive tests completed. Your clinical risk assessment report is ready.");
           }
         } finally {
           showAILoadingOverlay(false);
@@ -2448,20 +2524,124 @@ function initEventListeners() {
     await refreshDoctorsList({ city, specialty, mode });
   });
 
-  let latestDocId = null;
+  document.getElementById("inpDoctorReportFile")?.addEventListener("change", async (e) => {
+    const file = e.target?.files?.[0] || null;
+    const prevBox = document.getElementById("docImagePreviewBox");
+    const prevImg = document.getElementById("docImagePreview");
+    if (file && (file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name))) {
+      try {
+        const uri = await readFileAsDataURL(file);
+        if (prevImg) prevImg.src = uri;
+        if (prevBox) prevBox.classList.remove("hidden");
+      } catch (_err) { }
+    } else if (prevBox) {
+      prevBox.classList.add("hidden");
+    }
+  });
+
+  const isPlaceholderFindings = (txt) => {
+    const clean = (txt || "").trim().toLowerCase();
+    if (!clean || clean.length < 6) return true;
+    return ["idk", "i dont know", "i don't know", "dont know", "don't know", "none", "n/a", "na", "nil", "unknown"].includes(clean);
+  };
+
+  const applyAIReportExtraction = (extracted, fallbackDays = 30, forceFillFindings = false) => {
+    if (!extracted) return null;
+    const fEl = document.getElementById("inpDocFindings");
+    if (extracted.findings_summary && fEl && (forceFillFindings || isPlaceholderFindings(fEl.value))) {
+      fEl.value = extracted.findings_summary;
+    }
+    const fDaysEl = document.getElementById("inpFollowupDays");
+    const fDays = extracted.followup_interval_days || fallbackDays;
+    if (fDaysEl && extracted.followup_interval_days) {
+      fDaysEl.value = extracted.followup_interval_days;
+    }
+
+    const resBox = document.getElementById("docExtractionResultBox");
+    const resText = document.getElementById("docExtractionResultText");
+    if (resBox && resText) {
+      const medsArr = Array.isArray(extracted.medicines) ? extracted.medicines : [];
+      const medHtml = medsArr.length > 0
+        ? medsArr.map((x) => `<span class="word-chip" style="font-size:12px;padding:3px 10px;">💊 ${x.name} ${x.dose || ""} (${x.frequency_per_day || 1}x/day)</span>`).join(" ")
+        : `<span style="color:var(--text-mid);font-size:12.5px;">No medicines listed in this report</span>`;
+      resText.innerHTML = `
+        <div style="margin-bottom:6px;"><strong>Findings:</strong> ${extracted.findings_summary || "Report analyzed."}</div>
+        <div style="margin-bottom:6px;"><strong>Medicines Found:</strong> <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${medHtml}</div></div>
+        <div style="margin-bottom:4px;"><strong>Follow-Up Retest:</strong> In ${fDays} days</div>
+        ${extracted.advice ? `<div><strong>Doctor's Advice:</strong> ${extracted.advice}</div>` : ""}
+      `;
+      resBox.classList.remove("hidden");
+    }
+
+    if (Array.isArray(extracted.medicines) && extracted.medicines.length > 0) {
+      const m = extracted.medicines[0];
+      const medName = document.getElementById("inpMedName");
+      if (medName && m.name) medName.value = m.name;
+      const medDose = document.getElementById("inpMedDose");
+      if (medDose && m.dose) medDose.value = m.dose;
+      const medFreq = document.getElementById("inpMedFreq");
+      if (medFreq && m.frequency_per_day) medFreq.value = m.frequency_per_day;
+      if (Array.isArray(m.reminder_times) && m.reminder_times[0]) {
+        const medTime = document.getElementById("inpMedTime");
+        if (medTime) medTime.value = m.reminder_times[0];
+      }
+      return m;
+    }
+    return null;
+  };
+
+  document.getElementById("btnAiGenerateFindings")?.addEventListener("click", async () => {
+    const aiBtn = document.getElementById("btnAiGenerateFindings");
+    const origHtml = aiBtn ? aiBtn.innerHTML : "";
+    try {
+      const file = document.getElementById("inpDoctorReportFile")?.files?.[0] || null;
+      const findingsText = document.getElementById("inpDocFindings")?.value.trim() || "";
+      const isImg = file && (file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name));
+      if (!isImg && isPlaceholderFindings(findingsText)) {
+        alert("Please select a prescription/report image first so AI can read it.");
+        return;
+      }
+      const fileDataUri = isImg ? await readFileAsDataURL(file) : null;
+      const followupDays = Number(document.getElementById("inpFollowupDays")?.value || 30);
+
+      if (aiBtn) {
+        aiBtn.disabled = true;
+        aiBtn.textContent = "⏳ AI Reading...";
+      }
+      showAILoadingOverlay(true);
+      const extracted = await extractPrescriptionAI(
+        isPlaceholderFindings(findingsText) ? "" : findingsText,
+        fileDataUri
+      );
+      applyAIReportExtraction(extracted, followupDays, true);
+    } catch (err) {
+      alert(err.message || "Unable to analyze report image with AI.");
+    } finally {
+      showAILoadingOverlay(false);
+      if (aiBtn) {
+        aiBtn.disabled = false;
+        aiBtn.innerHTML = origHtml;
+      }
+    }
+  });
+
   document.getElementById("btnUploadDoctorDoc")?.addEventListener("click", async () => {
+    const uploadBtn = document.getElementById("btnUploadDoctorDoc");
+    const origBtnHtml = uploadBtn ? uploadBtn.innerHTML : "";
     try {
       if (!currentPerson) {
         const ok = await ensurePersonAndSessionReady("baseline");
         if (!ok) return;
       }
       const findingsText = document.getElementById("inpDocFindings")?.value.trim() || "";
+      const rawFindings = document.getElementById("inpDocFindings")?.value.trim() || "";
+      const findingsText = isPlaceholderFindings(rawFindings) ? "" : rawFindings;
       const followupDays = Number(document.getElementById("inpFollowupDays")?.value || 30);
       const fileInput = document.getElementById("inpDoctorReportFile");
       const file = fileInput?.files?.[0] || null;
 
       let fileDataUri = null;
-      if (file && file.type.startsWith("image/")) {
+      if (file && (file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name))) {
         fileDataUri = await readFileAsDataURL(file);
       }
 
@@ -2470,10 +2650,16 @@ function initEventListeners() {
         return;
       }
 
+      if (uploadBtn) {
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "⏳ Analyzing Report...";
+      }
+      showAILoadingOverlay(true);
+
       const doc = await uploadDoctorDocument({
         person_id: currentPerson.id,
         file_path: file ? `documents/${Date.now()}_${file.name}` : `documents/visit_${Date.now()}.txt`,
-        file_type: file && file.Name?.endsWith(".pdf") ? "pdf" : "image",
+        file_type: file && file.name?.toLowerCase().endsWith(".pdf") ? "pdf" : "image",
         findings_text: findingsText || (file ? `Uploaded prescription file: ${file.name}` : ""),
         followup_interval_days: followupDays,
         watch_domains: ["memory", "orientation", "planning"],
@@ -2481,10 +2667,28 @@ function initEventListeners() {
       latestDocId = doc.id;
 
       const extracted = await extractPrescriptionAI(findingsText, fileDataUri);
+      const resBox = document.getElementById("docExtractionResultBox");
+      const resText = document.getElementById("docExtractionResultText");
       if (extracted) {
-        if (extracted.findings_summary && !findingsText) {
+        if (extracted.findings_summary) {
           const fEl = document.getElementById("inpDocFindings");
-          if (fEl) fEl.value = extracted.findings_summary;
+          if (fEl && (!findingsText || findingsText.length < 6)) {
+            fEl.value = extracted.findings_summary;
+          }
+        }
+        if (resBox && resText) {
+          const medsArr = Array.isArray(extracted.medicines) ? extracted.medicines : [];
+          const medHtml = medsArr.length > 0
+            ? medsArr.map((x) => `<span class="word-chip" style="font-size:12px;padding:3px 10px;">💊 ${x.name} ${x.dose || ""} (${x.frequency_per_day || 1}x/day)</span>`).join(" ")
+            : `<span style="color:var(--text-mid);font-size:12.5px;">No medicines listed in this report</span>`;
+          const fDays = extracted.followup_interval_days || followupDays;
+          resText.innerHTML = `
+            <div style="margin-bottom:6px;"><strong>Findings:</strong> ${extracted.findings_summary || "Report saved."}</div>
+            <div style="margin-bottom:6px;"><strong>Medicines Found:</strong> <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">${medHtml}</div></div>
+            <div style="margin-bottom:4px;"><strong>Follow-Up Retest:</strong> In ${fDays} days</div>
+            ${extracted.advice ? `<div><strong>Doctor's Advice:</strong> ${extracted.advice}</div>` : ""}
+          `;
+          resBox.classList.remove("hidden");
         }
         if (Array.isArray(extracted.medicines) && extracted.medicines.length > 0) {
           const m = extracted.medicines[0];
@@ -2499,36 +2703,36 @@ function initEventListeners() {
             if (medTime) medTime.value = m.reminder_times[0];
           }
           alert(
-            `Doctor report saved & AI extracted medicine candidate (${m.name} ${m.dose}).\nPlease verify against your paper prescription and tick the confirmation checkbox before saving.`
+            `Report saved & AI extracted medicine (${m.name} ${m.dose}).\nPlease tick the confirmation checkbox and click Confirm.`
           );
           return;
         }
-      }
+        const firstMed = applyAIReportExtraction(extracted, followupDays, false);
+        if (firstMed) {
+          alert(
+            `Report saved & AI extracted medicine (${firstMed.name} ${firstMed.dose}).\nPlease tick the confirmation checkbox and click Confirm.`
+          );
+          return;
+        }
 
-      alert("Doctor report saved privately and follow-up retest scheduled ✓");
-    } catch (err) {
-      alert(err.message || "Error uploading doctor report.");
-    }
-  });
+        alert("Doctor report saved and analyzed ✓");
+      } catch (err) {
+        alert(err.message || "Error uploading doctor report.");
+      } finally {
+        showAILoadingOverlay(false);
+        if (uploadBtn) {
+          uploadBtn.disabled = false;
+          uploadBtn.innerHTML = origBtnHtml;
+        }
+      }
+    });
 
   const refreshMeds = async () => {
     if (!currentPerson) return;
     const meds = (await listMedicines(currentPerson.id)) || [];
     const sessions = (await listSessions(currentPerson.id)) || [];
     renderHomePatientDashboard(currentPerson, sessions, meds);
-    renderConfirmedMedicines(meds, async (medId, statusVal) => {
-      const logRes = await logMedicineDose({
-        medicine_id: medId,
-        scheduled_time: "21:00",
-        status: statusVal,
-      });
-      const fb = document.getElementById("medicineLogFeedback");
-      if (fb) {
-        fb.textContent = logRes.gentle_reminder
-          ? `Logged as ${statusVal}: ${logRes.gentle_reminder}`
-          : `Dose marked as TAKEN ✓ (${new Date(logRes.logged_at).toLocaleTimeString()})`;
-      }
-    });
+    renderPersonMedicines(meds);
   };
 
   document.getElementById("btnSaveConfirmedMedicine")?.addEventListener("click", async () => {
@@ -2602,6 +2806,7 @@ function initEventListeners() {
     currentCompletedSession = null;
     localStorage.removeItem("yaadasht_person_draft");
     localStorage.removeItem("yaadasht_saved_person");
+    resetPostVisitUI();
     renderHomePatientDashboard(null, []);
     const badge = document.getElementById("activePersonBadge");
     if (badge) badge.textContent = "Data Deleted";
